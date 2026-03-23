@@ -1,0 +1,49 @@
+# Python 缓存文件
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# 虚拟环境
+venv/
+env/
+ENV/
+.venv
+
+# IDE 配置
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 数据文件（不要打包到镜像中）
+vocs_realtime_data/
+*.csv
+*.log
+
+# 测试文件
+test_*.py
+*_test.py
+
+# 编译文件
+*.exe
+*.dll
+*.dylib
+
+# 文档
+说明文档.docx
+启动指南.txt
+README.md
+
+# Git
+.git/
+.gitignore
+
+# Docker 相关
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# 其他
+.DS_Store
+*.bak
