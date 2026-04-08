@@ -1,0 +1,19 @@
+{
+  "summary": {
+    "dataset": "/Users/fangablt/Applications/EngineeringWorks/testProject/test_newPyEnv/服务外包大赛/VOCS/src/data/vocs_dataset.csv",
+    "checkpoint": "/Users/fangablt/Applications/EngineeringWorks/testProject/test_newPyEnv/服务外包大赛/new_VOC/tmp_artifacts/models/new_VOC_best.pt",
+    "scaler": "/Users/fangablt/Applications/EngineeringWorks/testProject/test_newPyEnv/服务外包大赛/new_VOC/tmp_artifacts/models/new_VOC_scalers.pkl",
+    "parameter_count": 107624,
+    "best_val_loss": 0.004889189588946381,
+    "test_loss": 0.005083209407402415,
+    "test_mae": 0.0686030868185437
+  },
+  "history": [
+    {
+      "epoch": 1,
+      "train_loss": 0.005371339916596402,
+      "val_loss": 0.004889189588946381,
+      "val_mae": 0.0639816844033099
+    }
+  ]
+}

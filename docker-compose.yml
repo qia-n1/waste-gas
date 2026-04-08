@@ -1,0 +1,34 @@
+services:
+  vocs-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vocs-control-system
+    ports:
+      - "8001:8001"
+    volumes:
+      # 持久化数据目录
+      - ./vocs_realtime_data:/app/vocs_realtime_data
+      # 挂载模型文件（方便更新模型）
+      - ./models:/app/models
+    environment:
+      # 模型文件路径
+      - MODEL_PATH=models/vocs_seq2seq_v2_best.pth
+      - SCALER_PATH=models/vocs_scalers_v2.pkl
+      # CSV 数据路径
+      - CSV_PATH=vocs_realtime_data/vocs_realtime_data.csv
+      # 设置时区为中国时区
+      - TZ=Asia/Shanghai
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/status')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - vocs-network
+
+networks:
+  vocs-network:
+    driver: bridge

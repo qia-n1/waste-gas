@@ -1,0 +1,45 @@
+1.双击：“vocs_server”或者运行“vocs_server.py”
+2.打开nginx-1.28.0文件夹，双击“nginx.exe”
+浏览器访问：
+http://localhost:5050/
+3.测试
+①直接运行Python 调用示例：test_api_complete.py 
+使用示例
+
+# 每60秒发送一次，发送20条数据
+python -u test_api_complete.py -s=20 -i=60
+
+# 每15分钟（900秒）发送一次，发送20条数据
+python -u test_api_complete.py -s=20 -i=900
+
+②或者 Postman 测试：
+URL：http://127.0.0.1:8001/sensor-data
+请求体：
+{
+    "timestamp": "2026-02-03T10:00:00",
+    "ambient_temp": 21.5,
+    "ambient_humidity": 63.5,
+    "ambient_pressure": 101.3,
+    "coating_flow": 8500.0,
+    "coating_conc": 45.0,
+    "coating_temp": 26.0,
+    "coating_pressure": 101.2,
+    "rotor_speed": 4.7,
+    "adsorption_fan_power": 44.0,
+    "desorption_fan_power": 3.5,
+    "rotor_inlet_temp": 26.0,
+    "rotor_inlet_humid": 65.0,
+    "desorption_temp": 205.0,
+    "concentrated_flow": 850.0,
+    "concentrated_conc": 400.0,
+    "concentrated_temp": 185.0,
+    "concentrated_pressure": 101.6,
+    "rto_in_flow": 1000.0,
+    "rto_in_temp": 185.0,
+    "rto_in_pressure": 101.5,
+    "burner_gas_flow": 11.0,
+    "combustion_temp": 757.8,
+    "rto_in_conc": 300.0,
+    "rto_out_conc": 45.0,
+    "rto_out_temp": 62.0
+}
