@@ -15,10 +15,16 @@ echo "[2/4] 提取主项目核心源代码到部署环境..."
 cp ../src/config.py api_src/
 cp ../src/features.py api_src/
 cp ../src/model.py api_src/
+cp ../src/vendor.py api_src/
+cp ../src/schemas.py api_src/
+cp ../src/ensemble_predictor.py api_src/
 touch api_src/__init__.py
 sed -i 's/from \.config/from api_src.config/g' api_src/*.py 2>/dev/null || true
 sed -i 's/from \.features/from api_src.features/g' api_src/*.py 2>/dev/null || true
 sed -i 's/from \.model/from api_src.model/g' api_src/*.py 2>/dev/null || true
+sed -i 's/from \.vendor/from api_src.vendor/g' api_src/*.py 2>/dev/null || true
+sed -i 's/from \.schemas/from api_src.schemas/g' api_src/*.py 2>/dev/null || true
+sed -i 's/from \.ensemble_predictor/from api_src.ensemble_predictor/g' api_src/*.py 2>/dev/null || true
 
 echo "[3/4] 准备初始化基准数据集与真实模型权重..."
 cp ../artifacts_pca_ensemble/pca_dlinear_large.pt models/

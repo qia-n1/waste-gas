@@ -52,14 +52,14 @@ export MAMBA_SSM_PATH=/path/to/state-spaces-mamba
 ## 训练
 
 ```bash
-cd /openbayes/home/服务外包大赛/new_VOC
+cd ./new_VOC
 PYTHONPATH=. python train.py --epochs 5
 ```
 
 ## 启动兼容服务
 
 ```bash
-cd /openbayes/home/服务外包大赛/new_VOC
+cd ./new_VOC
 PYTHONPATH=. python server.py
 ```
 

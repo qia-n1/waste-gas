@@ -11,8 +11,9 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm.auto import tqdm
 
-# Add VOCS src to path for baseline LSTM model
-vocs_src_root = Path('/openbayes/home/服务外包大赛/VOCS/src')
+# Resolve project-relative paths instead of hardcoded OpenBayes paths
+project_root = Path(__file__).resolve().parent
+vocs_src_root = project_root.parent / 'VOCS' / 'src'
 if str(vocs_src_root) not in sys.path:
     sys.path.append(str(vocs_src_root))
 
@@ -150,7 +151,7 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     set_seed(42)
     
-    data_cfg = DataConfig(seq_len=96, pred_len=24, dataset_csv=Path('/openbayes/home/服务外包大赛/VOCS/src/data/vocs_dataset.csv'))
+    data_cfg = DataConfig(seq_len=96, pred_len=24, dataset_csv=vocs_src_root / 'data' / 'vocs_dataset.csv')
     # Ensure PCA is enabled
     data_cfg.pca_enabled = True 
     pipeline = VOCSFeaturePipeline(data_cfg)
@@ -173,7 +174,7 @@ def main():
     models_to_train = [
         {"name": "pca_dlinear_large", "type": "dlinear", "kwargs": {"epochs": 7, "hidden_dims": (256, 128)}},
         {"name": "pca_dlinear_deep_large", "type": "dlinear", "kwargs": {"epochs": 7, "hidden_dims": (96, 48, 24)}},
-        {"name": "pca_mamba_fusion", "type": "mamba", "kwargs": {"epochs": 3}},
+        # Mamba variant is temporarily disabled in this environment.
         {"name": "pca_lstm_1layer", "type": "lstm", "kwargs": {"num_layers": 1, "epochs": 12}},
         {"name": "pca_lstm_2layer", "type": "lstm", "kwargs": {"num_layers": 2, "epochs": 12}},
     ]
@@ -189,9 +190,6 @@ def main():
         if cfg['type'] == 'dlinear':
             pred_scaled, model = train_dlinear(cfg['name'], x_train, y_train, x_val, y_val, x_test, y_test, device, 
                                                input_dim, data_cfg.pred_len, data_cfg.seq_len, **cfg['kwargs'])
-        elif cfg['type'] == 'mamba':
-            pred_scaled, model = train_dlinear(cfg['name'], x_train, y_train, x_val, y_val, x_test, y_test, device, 
-                                               input_dim, data_cfg.pred_len, data_cfg.seq_len, is_mamba=True, **cfg['kwargs'])
         elif cfg['type'] == 'lstm':
             pred_scaled, model = train_lstm(cfg['name'], x_train=x_train, y_train=y_train, x_val=x_val, y_val=y_val, 
                                             x_test=x_test, y_test=y_test, device=device, input_dim=input_dim, 

@@ -11,7 +11,7 @@
 ### 1.1 提取与构建（一键脚本）
 在终端中进入项目主目录并执行打包脚本：
 ```bash
-cd /openbayes/home/服务外包大赛/new_VOC/ensemble_docker
+cd ./new_VOC/ensemble_docker
 chmod +x build_and_pack.sh
 ./build_and_pack.sh
 ```
@@ -69,6 +69,12 @@ docker compose up --build -d
     "baseline": 35.0, // 系统安全基线
     "target": 70.80,  // 本次事件推演的预测均值
     "total_increment": 35.80, // 总计超标偏移量
+    "waterfall_features": [ // 细分指标贡献度（推荐作为主展示来源）
+      { "feature": "coating_conc", "group": "废气源与环境组", "ratio": 0.24, "contribution": 8.59 },
+      { "feature": "coating_flow", "group": "废气源与环境组", "ratio": 0.16, "contribution": 5.73 },
+      { "feature": "rotor_speed", "group": "转轮浓缩系统", "ratio": 0.10, "contribution": 3.58 },
+      { "feature": "combustion_temp", "group": "RTO焚烧系统", "ratio": 0.07, "contribution": 2.51 }
+    ],
     "waterfall_groups": [ // 分组责任划扣结果，前端据此可直接画带上下箭头的瀑布大屏图
       { "group": "废气源与环境组", "contribution": 28.99 }, // 例：车间产排是超标主因
       { "group": "转轮浓缩系统", "contribution": 5.01 },
@@ -82,6 +88,10 @@ docker compose up --build -d
   }
 }
 ```
+
+说明：
+- `waterfall_features` 是细分指标级别的贡献度，适合精细化溯源、TopN 展示和审计。
+- `waterfall_groups` 由 `waterfall_features` 自动聚合得到，主要用于兼容历史前端图表。
 
 ### 2.2 健康检查接口
 - **路径**：`GET /health`

@@ -7,14 +7,19 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from api_src.config import ModelConfig
-from .vendor import ensure_mamba_ssm_importable
 
-ensure_mamba_ssm_importable()
-
-from mamba_ssm.modules.mamba3 import Mamba3  # noqa: E402
+# Mamba is disabled by default in this environment to avoid hard dependency on mamba_ssm.
+# To re-enable, restore vendor bootstrap and Mamba3 import below.
+# from .vendor import ensure_mamba_ssm_importable
+# ensure_mamba_ssm_importable()
+# from mamba_ssm.modules.mamba3 import Mamba3  # noqa: E402
+Mamba3 = None
+MAMBA_ENABLED = False
 
 
 def _patch_mamba3_fallback_for_legacy_cuda() -> None:
+    if (not MAMBA_ENABLED) or Mamba3 is None:
+        return
     original = getattr(Mamba3, "_use_torch_fallback", None)
     if original is None or getattr(Mamba3, "_vocsmamba_fallback_patched", False):
         return
@@ -41,6 +46,8 @@ def count_parameters(model: nn.Module) -> int:
 class VocsMambaBlock(nn.Module):
     def __init__(self, config: ModelConfig):
         super().__init__()
+        if (not MAMBA_ENABLED) or Mamba3 is None:
+            raise RuntimeError("Mamba is disabled in current environment. Please enable MAMBA_ENABLED and install mamba_ssm.")
         self.residual_scale_mixer = config.residual_scale_mixer
         self.residual_scale_ffn = config.residual_scale_ffn
         self.norm = nn.LayerNorm(config.d_model)

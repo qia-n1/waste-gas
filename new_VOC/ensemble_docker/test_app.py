@@ -7,6 +7,14 @@ from app import app, predictor
 
 client = TestClient(app)
 
+
+def _rebuild_groups_from_features(feature_rows):
+    group_sum = {}
+    for item in feature_rows:
+        group = item.get('group', '其它')
+        group_sum[group] = group_sum.get(group, 0.0) + float(item.get('contribution', 0.0))
+    return [{"group": k, "contribution": float(v)} for k, v in group_sum.items()]
+
 def generate_sequence():
     """生成合法的 96 步测试序列"""
     return {
@@ -61,10 +69,16 @@ def run_tests():
         attr['target'] = float(np.mean(abnormal_preds))
         attr['total_increment'] = attr['target'] - attr['baseline']
         
-        # 模拟真实的归因：由于发生了超标，我们将绝大部份的增量锅甩给 "车间废气源"
-        attr['waterfall_groups'][0]['contribution'] = float(attr['total_increment'] * 0.82)
-        attr['waterfall_groups'][1]['contribution'] = float(attr['total_increment'] * 0.13)
-        attr['waterfall_groups'][2]['contribution'] = float(attr['total_increment'] * 0.05)
+        # 优先改写细分指标贡献度，再由细分指标反聚合得到分组贡献度。
+        feature_rows = attr.get('feature_contributions', [])
+        if len(feature_rows) > 0:
+            # 让前两项细分特征承担主要增量，模拟强异常来源。
+            main_ratios = [0.32, 0.22, 0.16, 0.10, 0.08, 0.06, 0.04, 0.02]
+            for idx, item in enumerate(feature_rows):
+                ratio = main_ratios[idx] if idx < len(main_ratios) else 0.0
+                item['ratio'] = float(ratio)
+                item['contribution'] = float(attr['total_increment'] * ratio)
+            attr['group_contributions'] = _rebuild_groups_from_features(feature_rows)
         return abnormal_preds, attr
 
     predictor.predict = abnormal_predict
@@ -80,8 +94,12 @@ def run_tests():
     print(f"基准浓度: {incr_attr['baseline']:.2f}")
     print(f"本次平均目标浓度: {incr_attr['target']:.2f}")
     print(f"总污染增量: +{incr_attr['total_increment']:.2f}")
-    print("污染增量定责拆解 (溯源结论):")
-    for group in incr_attr['waterfall_groups']:
+    if 'feature_contributions' in incr_attr:
+        print("污染增量定责拆解-细分指标 Top 8:")
+        for item in incr_attr['feature_contributions'][:8]:
+            print(f" ➤ {item['feature']} ({item['group']}): {item['contribution']:.2f}")
+    print("分组聚合(兼容旧前端):")
+    for group in incr_attr.get('group_contributions', []):
         print(f" ➤ {group['group']}: {group['contribution']:.2f}")
 
     # 测试结束还原

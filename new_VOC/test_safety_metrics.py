@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 # 添加 new_VOC 路径
-sys.path.insert(0, str(Path('/openbayes/home/服务外包大赛/new_VOC')))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from safety_metrics import (
     soft_trend_accuracy,
