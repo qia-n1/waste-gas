@@ -13,7 +13,11 @@ from tqdm.auto import tqdm
 
 # Resolve project-relative paths instead of hardcoded OpenBayes paths
 project_root = Path(__file__).resolve().parent
-vocs_src_root = project_root.parent / 'VOCS' / 'src'
+if str(project_root) not in sys.path:
+    sys.path.append(str(project_root))
+vocs_src_root = project_root.parent / 'src'
+if not vocs_src_root.exists():
+    vocs_src_root = project_root.parent / 'VOCS' / 'src'
 if str(vocs_src_root) not in sys.path:
     sys.path.append(str(vocs_src_root))
 
@@ -22,7 +26,7 @@ from vocs_model import ImprovedSeq2SeqModel
 
 from src.config import DataConfig, ModelConfig, TrainConfig
 from src.features import VOCSFeaturePipeline
-from src.model import DLinearForecasterLarge, DLinearMambaEncoder
+from src.model import DLinearForecasterLarge, DLinearMambaEncoder, TransformerForecaster
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 import random
@@ -147,6 +151,58 @@ def train_lstm(variant_name, num_layers, x_train, y_train, x_val, y_val, x_test,
             preds.append(model(xb, target=None, teacher_forcing_ratio=0.0).cpu().numpy())
     return np.concatenate(preds, axis=0), model
 
+def train_transformer(variant_name, x_train, y_train, x_val, y_val, x_test, y_test, device, input_dim, pred_len, seq_len,
+                      epochs=8, bsz=32, lr=3e-4, wd=1e-5, n_heads=8, n_layers=3):
+    model_cfg = ModelConfig(d_model=256, n_layer=1, ff_mult=2, dropout=0.1)
+    model = TransformerForecaster(
+        input_dim=input_dim,
+        config=model_cfg,
+        pred_len=pred_len,
+        seq_len=seq_len,
+        n_heads=n_heads,
+        n_layers=n_layers,
+    ).to(device)
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
+    scaler = torch.amp.GradScaler(device="cuda", enabled=(device.type == "cuda"))
+    train_loader = DataLoader(TensorDataset(torch.from_numpy(x_train), torch.from_numpy(y_train)), batch_size=bsz, shuffle=True, pin_memory=True)
+    val_loader = DataLoader(TensorDataset(torch.from_numpy(x_val), torch.from_numpy(y_val)), batch_size=bsz, shuffle=False)
+    test_loader = DataLoader(TensorDataset(torch.from_numpy(x_test), torch.from_numpy(y_test)), batch_size=bsz, shuffle=False)
+
+    best_val = float("inf")
+    best_state = None
+    for _ in range(epochs):
+        model.train()
+        for xb, yb in train_loader:
+            xb, yb = xb.to(device, non_blocking=True), yb.to(device, non_blocking=True)
+            optimizer.zero_grad(set_to_none=True)
+            with torch.amp.autocast(device_type="cuda", enabled=(device.type == "cuda")):
+                loss = model.loss(xb, yb)
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+
+        model.eval()
+        val_losses = []
+        with torch.inference_mode():
+            for xb, yb in val_loader:
+                xb, yb = xb.to(device, non_blocking=True), yb.to(device, non_blocking=True)
+                with torch.amp.autocast(device_type="cuda", enabled=(device.type == "cuda")):
+                    val_losses.append(model.loss(xb, yb).item())
+        va_loss = float(np.mean(val_losses))
+        if va_loss < best_val:
+            best_val = va_loss
+            best_state = copy.deepcopy(model.state_dict())
+
+    model.load_state_dict(best_state)
+    model.eval()
+    preds = []
+    with torch.inference_mode():
+        for xb, _ in test_loader:
+            xb = xb.to(device)
+            preds.append(model(xb).cpu().numpy())
+    return np.concatenate(preds, axis=0), model
+
 def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     set_seed(42)
@@ -174,6 +230,7 @@ def main():
     models_to_train = [
         {"name": "pca_dlinear_large", "type": "dlinear", "kwargs": {"epochs": 7, "hidden_dims": (256, 128)}},
         {"name": "pca_dlinear_deep_large", "type": "dlinear", "kwargs": {"epochs": 7, "hidden_dims": (96, 48, 24)}},
+        {"name": "pca_transformer_base", "type": "transformer", "kwargs": {"epochs": 8, "n_heads": 8, "n_layers": 3}},
         # Mamba variant is temporarily disabled in this environment.
         {"name": "pca_lstm_1layer", "type": "lstm", "kwargs": {"num_layers": 1, "epochs": 12}},
         {"name": "pca_lstm_2layer", "type": "lstm", "kwargs": {"num_layers": 2, "epochs": 12}},
@@ -190,6 +247,10 @@ def main():
         if cfg['type'] == 'dlinear':
             pred_scaled, model = train_dlinear(cfg['name'], x_train, y_train, x_val, y_val, x_test, y_test, device, 
                                                input_dim, data_cfg.pred_len, data_cfg.seq_len, **cfg['kwargs'])
+        elif cfg['type'] == 'transformer':
+            pred_scaled, model = train_transformer(cfg['name'], x_train=x_train, y_train=y_train, x_val=x_val, y_val=y_val,
+                                                   x_test=x_test, y_test=y_test, device=device, input_dim=input_dim,
+                                                   pred_len=data_cfg.pred_len, seq_len=data_cfg.seq_len, **cfg['kwargs'])
         elif cfg['type'] == 'lstm':
             pred_scaled, model = train_lstm(cfg['name'], x_train=x_train, y_train=y_train, x_val=x_val, y_val=y_val, 
                                             x_test=x_test, y_test=y_test, device=device, input_dim=input_dim, 

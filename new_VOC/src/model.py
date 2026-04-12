@@ -697,6 +697,91 @@ class DLinearForecaster(nn.Module):
         return self.forward(x)
 
 
+class PositionalEncoding(nn.Module):
+    """Standard sinusoidal positional encoding for sequence models."""
+
+    def __init__(self, d_model: int, max_len: int = 512):
+        super().__init__()
+        position = torch.arange(0, max_len, dtype=torch.float32).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2, dtype=torch.float32) * (-math.log(10000.0) / d_model))
+        pe = torch.zeros(max_len, d_model, dtype=torch.float32)
+        pe[:, 0::2] = torch.sin(position * div_term)
+        if d_model % 2 == 0:
+            pe[:, 1::2] = torch.cos(position * div_term)
+        else:
+            pe[:, 1::2] = torch.cos(position * div_term[:-1])
+        self.register_buffer("pe", pe.unsqueeze(0))  # [1, L, C]
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x: [B, L, C]
+        return x + self.pe[:, : x.size(1)]
+
+
+class TransformerForecaster(nn.Module):
+    """Transformer encoder forecaster with the same IO contract as DLinear."""
+
+    def __init__(
+        self,
+        input_dim: int,
+        config: ModelConfig,
+        pred_len: int,
+        seq_len: int = 96,
+        n_heads: int = 8,
+        n_layers: int = 3,
+    ):
+        super().__init__()
+        self.input_dim = int(input_dim)
+        self.pred_len = int(pred_len)
+        self.seq_len = int(seq_len)
+        self.d_model = int(config.d_model)
+
+        if self.d_model % max(1, n_heads) != 0:
+            raise ValueError("d_model must be divisible by n_heads for TransformerForecaster.")
+
+        self.input_proj = nn.Sequential(
+            nn.Linear(self.input_dim, self.d_model),
+            nn.LayerNorm(self.d_model),
+        )
+        self.pos_enc = PositionalEncoding(d_model=self.d_model, max_len=max(512, self.seq_len + self.pred_len + 1))
+
+        enc_layer = nn.TransformerEncoderLayer(
+            d_model=self.d_model,
+            nhead=n_heads,
+            dim_feedforward=self.d_model * max(2, int(config.ff_mult)),
+            dropout=float(config.dropout),
+            activation="gelu",
+            batch_first=True,
+        )
+        self.encoder = nn.TransformerEncoder(enc_layer, num_layers=max(1, int(n_layers)))
+        self.head = nn.Sequential(
+            nn.Linear(self.d_model * 2, self.d_model),
+            nn.GELU(),
+            nn.Dropout(float(config.dropout)),
+            nn.Linear(self.d_model, self.pred_len),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: [batch_size, seq_len, input_dim]
+
+        Returns:
+            [batch_size, pred_len, 1]
+        """
+        hidden_states = self.input_proj(x)
+        hidden_states = self.pos_enc(hidden_states)
+        hidden_states = self.encoder(hidden_states)
+        summary = torch.cat([hidden_states[:, -1], hidden_states.mean(dim=1)], dim=-1)
+        pred = self.head(summary).unsqueeze(-1)
+        return pred
+
+    def loss(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        return F.mse_loss(self.forward(x), y)
+
+    def sample(self, x: torch.Tensor, num_steps: int | None = None) -> torch.Tensor:
+        return self.forward(x)
+
+
 class DLinearForecasterLarge(DLinearForecaster):
     """
     Parameter-expanded DLinear variant with deeper trend/seasonal projection branches.
