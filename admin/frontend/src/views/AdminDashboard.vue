@@ -121,7 +121,6 @@ onBeforeUnmount(() => {
 <template>
   <DashboardLayout
     :metrics="dashboardStore.overview.metrics"
-    :banner="dashboardStore.overview.statusBanner"
     :connected="dashboardStore.connected"
     :user-name="authStore.user?.name ?? '管理员'"
     @logout="handleLogout"
