@@ -218,3 +218,15 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
+# Frontend build files
+frontend/dist/
+frontend/node_modules/
+
+# UniApp build files
+uniapp-client/unpackage/
+uniapp-client/node_modules/
+
+# General build files
+dist/
+build/
+
