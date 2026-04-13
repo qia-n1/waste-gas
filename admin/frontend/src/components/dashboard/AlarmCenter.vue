@@ -83,7 +83,9 @@ const levelLabel = (level: string) => {
 
 <style scoped>
 .alarm-card {
-  min-height: 320px;
+  min-height: 0;
+  flex: 1 1 0;
+  overflow: hidden;
 }
 
 .alarm-table {
@@ -92,7 +94,10 @@ const levelLabel = (level: string) => {
   gap: 10px;
   margin-top: 12px;
   min-height: 0;
-  overflow: auto;
+  flex: 1 1 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
 }
 
 .alarm-head,

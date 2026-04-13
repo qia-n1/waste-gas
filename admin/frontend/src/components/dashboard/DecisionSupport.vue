@@ -31,30 +31,32 @@ const forecastPreview = computed(() =>
   <section class="panel-card decision-card">
     <div class="panel-title">决策支持与详情</div>
 
-    <div class="hero-metric">
-      <div>
-        <span>VOCs 实时详情</span>
-        <strong>{{ metrics.currentVocs.toFixed(1) }}</strong>
-        <small>mg/m³</small>
+    <div class="decision-body">
+      <div class="hero-metric">
+        <div>
+          <span>VOCs 实时详情</span>
+          <strong>{{ metrics.currentVocs.toFixed(1) }}</strong>
+          <small>mg/m³</small>
+        </div>
+        <span class="badge" :class="`badge-${metrics.alertLevel}`">
+          {{ metrics.alertLevel === "critical" ? "红色预警" : metrics.alertLevel === "warning" ? "橙色预警" : "稳定" }}
+        </span>
       </div>
-      <span class="badge" :class="`badge-${metrics.alertLevel}`">
-        {{ metrics.alertLevel === "critical" ? "红色预警" : metrics.alertLevel === "warning" ? "橙色预警" : "稳定" }}
-      </span>
-    </div>
 
-    <div class="parameter-list">
-      <div v-for="item in keyParameters" :key="item.field" class="parameter-item">
-        <span>{{ item.label }}</span>
-        <strong>{{ item.value.toFixed(1) }} {{ item.unit }}</strong>
+      <div class="parameter-list">
+        <div v-for="item in keyParameters" :key="item.field" class="parameter-item">
+          <span>{{ item.label }}</span>
+          <strong>{{ item.value.toFixed(1) }} {{ item.unit }}</strong>
+        </div>
       </div>
-    </div>
 
-    <div class="summary-box">
-      <h3>AI 智能建议</h3>
-      <p>{{ summary }}</p>
-      <ul>
-        <li v-for="suggestion in suggestions" :key="suggestion">{{ suggestion }}</li>
-      </ul>
+      <div class="summary-box">
+        <h3>AI 智能建议</h3>
+        <p>{{ summary }}</p>
+        <ul>
+          <li v-for="suggestion in suggestions" :key="suggestion">{{ suggestion }}</li>
+        </ul>
+      </div>
     </div>
 
     <div class="actions">
@@ -76,7 +78,17 @@ const forecastPreview = computed(() =>
 
 <style scoped>
 .decision-card {
-  min-height: 320px;
+  min-height: 0;
+  flex: 1 1 0;
+  overflow: hidden;
+}
+
+.decision-body {
+  min-height: 0;
+  flex: 1 1 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
 }
 
 .hero-metric {
