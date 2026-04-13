@@ -7,6 +7,7 @@ from config import settings
 from routers.alerts import router as alerts_router
 from routers.auth import router as auth_router
 from routers.dashboard import router as dashboard_router
+from routers.users import router as users_router
 
 
 app = FastAPI(title=settings.app_name, version="0.1.0")
@@ -22,6 +23,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(dashboard_router)
 app.include_router(alerts_router)
+app.include_router(users_router)
 
 
 @app.get("/api/health")
