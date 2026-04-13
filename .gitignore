@@ -211,6 +211,7 @@ __marimo__/
 
 # Frontend build files
 frontend/dist/
+frontend/node_modules/
 
 # UniApp build files
 uniapp-client/unpackage/
