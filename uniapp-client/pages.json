@@ -1,0 +1,70 @@
+{
+  "pages": [
+    {
+      "path": "pages/index/index",
+      "style": {
+        "navigationBarTitleText": "首页"
+      }
+    },
+    {
+      "path": "pages/monitor/realtime",
+      "style": {
+        "navigationBarTitleText": "实时监控"
+      }
+    },
+    {
+      "path": "pages/alerts/list",
+      "style": {
+        "navigationBarTitleText": "告警中心"
+      }
+    },
+    {
+      "path": "pages/alerts/detail",
+      "style": {
+        "navigationBarTitleText": "告警详情"
+      }
+    },
+    {
+      "path": "pages/profile/index",
+      "style": {
+        "navigationBarTitleText": "个人中心"
+      }
+    },
+    {
+      "path": "pages/settings/index",
+      "style": {
+        "navigationBarTitleText": "设置"
+      }
+    }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "废气监测系统",
+    "navigationBarBackgroundColor": "#4CAF50",
+    "backgroundColor": "#f5f5f5"
+  },
+  "tabBar": {
+    "color": "#666",
+    "selectedColor": "#4CAF50",
+    "backgroundColor": "#fff",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/index/index",
+        "text": "首页"
+      },
+      {
+        "pagePath": "pages/monitor/realtime",
+        "text": "监控"
+      },
+      {
+        "pagePath": "pages/alerts/list",
+        "text": "告警"
+      },
+      {
+        "pagePath": "pages/profile/index",
+        "text": "我的"
+      }
+    ]
+  }
+}
