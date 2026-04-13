@@ -60,10 +60,22 @@ const levelDot = (level: string) => (level === "critical" ? "dot-critical" : "do
 </template>
 
 <style scoped>
+.panel-card {
+  min-height: 0;
+  flex: 0 0 auto;
+  max-height: 220px;
+  overflow: hidden;
+}
+
 .alert-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-height: 0;
+  flex: 1 1 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
 }
 
 .alert-item {

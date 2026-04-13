@@ -62,7 +62,19 @@ defineEmits<{
   gap: 14px;
 }
 
+/* Left: entire column scrolls as one block */
+.dashboard-column--left {
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+
 .dashboard-column--center {
+  overflow: hidden;
+}
+
+/* Right: column itself doesn't scroll; each child card handles its own overflow */
+.dashboard-column--right {
   overflow: hidden;
 }
 
@@ -81,6 +93,11 @@ defineEmits<{
 
   .dashboard-grid {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-column--left,
+  .dashboard-column--right {
+    overflow: visible;
   }
 }
 </style>
