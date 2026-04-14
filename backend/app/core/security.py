@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Optional
 
 import jwt
 from fastapi.security import OAuth2PasswordBearer
@@ -10,7 +10,7 @@ from app.core.config import get_settings
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl='/api/v1/auth/token')
 
 
-def create_access_token(subject: str, extra_claims: dict[str, Any] | None = None) -> str:
+def create_access_token(subject: str, extra_claims: Optional[dict[str, Any]] = None) -> str:
     settings = get_settings()
     expire_at = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expire_minutes)
     payload: dict[str, Any] = {'sub': subject, 'exp': expire_at}

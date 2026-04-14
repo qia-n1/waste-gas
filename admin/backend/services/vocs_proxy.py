@@ -329,6 +329,10 @@ def _build_heatmap_source(
     return {"dates": dates, "hours": list(range(24)), "values": values}
 
 
+def _row_to_feature_values(row: Dict[str, Any]) -> List[float]:
+    return [_as_float(row.get(field)) for field in SENSOR_FIELDS]
+
+
 async def _fetch_json(
     path: str, params: Optional[Dict[str, Any]] = None
 ) -> Optional[Any]:
@@ -337,6 +341,32 @@ async def _fetch_json(
             base_url=settings.vocs_base_url, timeout=settings.request_timeout
         ) as client:
             response = await client.get(path, params=params)
+            response.raise_for_status()
+            return response.json()
+    except httpx.HTTPError:
+        return None
+
+
+async def call_ensemble_predict(
+    history: Optional[List[Dict[str, Any]]] = None,
+) -> Optional[Dict[str, Any]]:
+    rows = history if history is not None else _load_csv_rows(limit=96)
+    if len(rows) < 96:
+        return None
+
+    data_sequence = []
+    for row in rows[-96:]:
+        data_sequence.append({
+            "timestamp": str(row.get("timestamp", "")),
+            "feature_values": _row_to_feature_values(row),
+        })
+
+    try:
+        async with httpx.AsyncClient(
+            base_url=settings.ensemble_base_url,
+            timeout=settings.ensemble_timeout,
+        ) as client:
+            response = await client.post("/predict", json={"data_sequence": data_sequence})
             response.raise_for_status()
             return response.json()
     except httpx.HTTPError:
@@ -368,15 +398,36 @@ async def fetch_alerts(limit: int = 30) -> list[dict[str, Any]]:
 
 async def get_dashboard_overview() -> dict[str, Any]:
     history = _load_csv_rows(limit=96)
-    status, latest_prediction, latest_sensor, alerts = await asyncio.gather(
+    status, latest_prediction, latest_sensor, alerts, ensemble_result = await asyncio.gather(
         fetch_status(),
         fetch_latest_prediction(),
         fetch_latest_sensor(),
         fetch_alerts(limit=20),
+        call_ensemble_predict(history),
     )
 
     sensor = latest_sensor or (history[-1] if history else _normalize_sensor(None))
-    prediction = latest_prediction or _build_fallback_prediction(history)
+
+    # Prefer ensemble predictions when available
+    attribution: Optional[Dict[str, Any]] = None
+    if ensemble_result and ensemble_result.get("status") == "success":
+        ensemble_preds = ensemble_result.get("predictions", [])
+        if ensemble_preds:
+            prediction = {
+                "timestamp": sensor.get("timestamp") or datetime.now().isoformat(),
+                "prediction_horizon": len(ensemble_preds),
+                "predicted_values": ensemble_preds,
+                "confidence": 0.88,
+                "alert_triggered": ensemble_result.get("is_exceed_warning", False),
+                "alert_message": "集成模型预测",
+                "prediction_type": "DLinear-PCA-Ensemble",
+            }
+            attribution = ensemble_result.get("incremental_attribution")
+        else:
+            prediction = latest_prediction or _build_fallback_prediction(history)
+    else:
+        prediction = latest_prediction or _build_fallback_prediction(history)
+
     actual_series, forecast_series = _serialize_trend(history, prediction)
     equipment = _build_equipment_summary(sensor, prediction, alerts)
     decision = _build_decision(sensor, prediction)
@@ -389,7 +440,7 @@ async def get_dashboard_overview() -> dict[str, Any]:
         if ts and ts.date() == today:
             today_alerts += 1
 
-    return {
+    result: dict[str, Any] = {
         "timestamp": sensor.get("timestamp") or datetime.now().isoformat(),
         "metrics": {
             "currentVocs": current_vocs,
@@ -418,6 +469,11 @@ async def get_dashboard_overview() -> dict[str, Any]:
         "continuousAlerts": _build_continuous_alerts(alerts),
         "factoryNodes": _build_factory_nodes(sensor, prediction),
     }
+
+    if attribution:
+        result["attribution"] = attribution
+
+    return result
 
 
 async def get_equipment_status() -> dict[str, Any]:
@@ -506,16 +562,33 @@ async def acknowledge_alert(alert_id: str) -> dict[str, Any]:
 
 async def get_alert_diagnosis(alert_id: str) -> dict[str, Any]:
     overview = await get_dashboard_overview()
-    key_parameters = overview["keyParameters"]
-    top_parameter = max(key_parameters, key=lambda item: item["value"])
+    attribution = overview.get("attribution")
+
+    # Use real ensemble attribution when available
+    if attribution and attribution.get("feature_contributions"):
+        contributors = [
+            {"label": item["feature"], "group": item["group"], "weight": item["ratio"], "contribution": item["contribution"]}
+            for item in attribution["feature_contributions"][:6]
+        ]
+        group_contributions = attribution.get("group_contributions", [])
+    else:
+        key_parameters = overview["keyParameters"]
+        top_parameter = max(key_parameters, key=lambda item: item["value"])
+        contributors = [
+            {"label": top_parameter["label"], "group": "", "weight": 0.34, "contribution": 0.0},
+            {"label": "燃烧温度", "group": "RTO焚烧系统", "weight": 0.27, "contribution": 0.0},
+            {"label": "喷涂废气浓度", "group": "废气源与环境组", "weight": 0.18, "contribution": 0.0},
+            {"label": "环境温度", "group": "废气源与环境组", "weight": 0.11, "contribution": 0.0},
+        ]
+        group_contributions = []
+
     return {
         "alertId": alert_id,
         "summary": overview["decision"]["summary"],
         "recommendations": overview["decision"]["suggestions"],
-        "contributors": [
-            {"label": top_parameter["label"], "weight": 0.34},
-            {"label": "燃烧温度", "weight": 0.27},
-            {"label": "喷涂废气浓度", "weight": 0.18},
-            {"label": "环境温度", "weight": 0.11},
-        ],
+        "contributors": contributors,
+        "groupContributions": group_contributions,
+        "baseline": attribution.get("baseline") if attribution else None,
+        "target": attribution.get("target") if attribution else None,
+        "totalIncrement": attribution.get("total_increment") if attribution else None,
     }

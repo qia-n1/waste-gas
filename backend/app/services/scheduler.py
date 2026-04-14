@@ -1,6 +1,8 @@
+from typing import Optional
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-_scheduler: AsyncIOScheduler | None = None
+_scheduler: Optional[AsyncIOScheduler] = None
 
 
 def get_scheduler() -> AsyncIOScheduler:

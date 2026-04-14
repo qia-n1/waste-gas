@@ -1,0 +1,29 @@
+1. 第一轮尝试
+    采用mamba3模块线性模型作为替代，差于基线。
+    【模型沉淀】：Baseline LSTM (含单层/双层及各变体)、Mamba (VOC Mamba, DLinear-Mamba Fusion)
+
+2. 线性模型按时序预测，仍有明显的远端失真问题
+    引入diffusion框架，实现一次性预测和更灵活的短期预警。
+    diffusion遇挫，可能的解释是diffusion是寻找数据分布，该赛题是进行指标回归预测，任务不匹配；
+    转向Dlinear线性模型重建基线。
+    【模型沉淀】：Diffusion Model、DLinear 全家桶 (DLinear, DLinear Large, DLinear Deep Large)、其他时序架构探索 (Gateformer, Timexer)
+
+3. 特征工程与集成学习重构
+    在单体模型到达瓶颈后，探索特征工程与模型融合架构。之前尝试了 PCA 降维，但由于丢毁了大量细粒度环境物理特征、导致可解释性受损且提升受促，最终的 **最优稳健集成架构中舍弃了 PCA**。
+    回滚并敲定了原生全维度特征基础上的多异构模型融合（Stacking / Weighting）。
+    【模型沉淀】：最优集成方案最终确立为 `稳定的 DLinear Large + Baseline LSTM (+ 深层 LSTM变体)` 构成的混合硬核组合。利用异构模型在不同频段数据的响应优势经过加权/均值集成，取得了全局最均衡、最优泛化的测试集指标表现。
+
+4. 重审视评价指标体系 (回归安全)
+    完成指标改进，使用软边界替代硬边界 trend_acc，使用多步 acc 进行评估。
+    【指标沉淀】：
+    - 基础回归指标：R2 (Avg R2), MAE, RMSE
+    - 业务趋势指标：trend_accuracy (全面重构为软边界，如采用 tolerance=3.0 来过滤抗锯齿噪音，实现更高泛化趋势预判评级)。
+    - 生产安全指标：exceed_accuracy, exceed_miss_rate (修正了算法逻辑，以真实的污染正样本为基数统计漏报率), exceed_recall, exceed_false_positive_rate。
+    ！！！> 下一步：提高超阈值(>80.0)样本权重 (exceed_sample_weight)，强行降低 exceed_miss_rate。
+
+
+5. XAI 可解释性与工程化微服务落地
+    【部署框架】：FastAPI + Pydantic + Docker Compose (无训练环境纯净版容器化打包)。
+    【XAI归因机制沉淀】：
+    - 增量瀑布图 (Waterfall Attribution)：在业务层将输入特征从工业机理上分为3个解耦组（废气源与环境组、转轮浓缩系统组、RTO焚烧系统组），用 Input * Gradient 等方法分配增量贡献，完美解决共线性/争抢功劳痛点。
+    - 滞后效应热力图 (Heatmap)：支持 24步 × 特征组，精确定位超标推高因素的发生时间节点。
