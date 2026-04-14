@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import httpx
 from fastapi import APIRouter, Depends
 
+from config import settings
 from routers.auth import get_current_user
 from services.vocs_proxy import (
     call_ensemble_predict,
@@ -43,38 +45,13 @@ async def ensemble_predict() -> dict:
 
 @router.get("/ensemble-health")
 async def ensemble_health() -> dict:
-    import httpx
-    from config import settings
     try:
         async with httpx.AsyncClient(
-            base_url=settings.ensemble_base_url, timeout=3
+            base_url=settings.ensemble_base_url,
+            timeout=3,
         ) as client:
-            resp = await client.get("/health")
-            resp.raise_for_status()
-            return {"connected": True, **resp.json()}
+            response = await client.get("/health")
+            response.raise_for_status()
+            return {"connected": True, **response.json()}
     except httpx.HTTPError:
         return {"connected": False, "status": "unreachable"}
-
-
-@router.post("/predict")
-async def ensemble_predict() -> dict:
-    result = await call_ensemble_predict()
-    if result is None:
-        return {"status": "error", "message": "集成预测服务不可用或历史数据不足96步"}
-    return result
-
-
-@router.get("/ensemble-health")
-async def ensemble_health() -> dict:
-    import httpx
-    from config import settings
-
-    try:
-        async with httpx.AsyncClient(
-            base_url=settings.ensemble_base_url, timeout=3,
-        ) as client:
-            resp = await client.get("/health")
-            resp.raise_for_status()
-            return {"reachable": True, **resp.json()}
-    except httpx.HTTPError:
-        return {"reachable": False, "status": "unreachable"}
