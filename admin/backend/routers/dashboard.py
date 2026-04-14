@@ -3,7 +3,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from routers.auth import get_current_user
-from services.vocs_proxy import get_anomaly_heatmap, get_dashboard_overview, get_equipment_status
+from services.vocs_proxy import (
+    call_ensemble_predict,
+    get_anomaly_heatmap,
+    get_dashboard_overview,
+    get_equipment_status,
+)
 
 
 router = APIRouter(
@@ -26,3 +31,50 @@ async def equipment_status() -> dict:
 @router.get("/anomaly-heatmap")
 async def anomaly_heatmap(days: int = 7) -> dict:
     return await get_anomaly_heatmap(days=days)
+
+
+@router.post("/predict")
+async def ensemble_predict() -> dict:
+    result = await call_ensemble_predict()
+    if result is None:
+        return {"status": "error", "message": "集成模型服务不可用或历史数据不足96步"}
+    return result
+
+
+@router.get("/ensemble-health")
+async def ensemble_health() -> dict:
+    import httpx
+    from config import settings
+    try:
+        async with httpx.AsyncClient(
+            base_url=settings.ensemble_base_url, timeout=3
+        ) as client:
+            resp = await client.get("/health")
+            resp.raise_for_status()
+            return {"connected": True, **resp.json()}
+    except httpx.HTTPError:
+        return {"connected": False, "status": "unreachable"}
+
+
+@router.post("/predict")
+async def ensemble_predict() -> dict:
+    result = await call_ensemble_predict()
+    if result is None:
+        return {"status": "error", "message": "集成预测服务不可用或历史数据不足96步"}
+    return result
+
+
+@router.get("/ensemble-health")
+async def ensemble_health() -> dict:
+    import httpx
+    from config import settings
+
+    try:
+        async with httpx.AsyncClient(
+            base_url=settings.ensemble_base_url, timeout=3,
+        ) as client:
+            resp = await client.get("/health")
+            resp.raise_for_status()
+            return {"reachable": True, **resp.json()}
+    except httpx.HTTPError:
+        return {"reachable": False, "status": "unreachable"}

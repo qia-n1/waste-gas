@@ -1,8 +1,10 @@
+from typing import Optional
+
 import redis.asyncio as redis
 
 from app.core.config import get_settings
 
-_redis_client: redis.Redis | None = None
+_redis_client: Optional[redis.Redis] = None
 
 
 async def get_redis() -> redis.Redis:
