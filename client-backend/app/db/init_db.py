@@ -1,8 +1,9 @@
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import inspect, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.security import hash_password
 from app.db.session import engine
 from app.models.entities import Alert, AlertRecord, Base, DeviceInfo, SensorReading, SystemSetting, UserProfile
 
@@ -10,6 +11,23 @@ from app.models.entities import Alert, AlertRecord, Base, DeviceInfo, SensorRead
 async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_ensure_user_profile_password_hash_column)
+
+
+def _ensure_user_profile_password_hash_column(connection) -> None:
+    inspector = inspect(connection)
+    if 'wg_user_profiles' not in inspector.get_table_names():
+        return
+
+    column_names = {column['name'] for column in inspector.get_columns('wg_user_profiles')}
+    if 'password_hash' in column_names:
+        return
+
+    connection.execute(text('ALTER TABLE wg_user_profiles ADD COLUMN password_hash VARCHAR(255)'))
+    connection.execute(
+        text('UPDATE wg_user_profiles SET password_hash = :password_hash WHERE password_hash IS NULL'),
+        {'password_hash': hash_password('password')},
+    )
 
 
 async def seed_if_empty(session: AsyncSession) -> None:
@@ -22,6 +40,7 @@ async def seed_if_empty(session: AsyncSession) -> None:
     session.add(
         UserProfile(
             username='admin',
+            password_hash=hash_password('password'),
             role='管理员',
             name='张三',
             email='admin@example.com',

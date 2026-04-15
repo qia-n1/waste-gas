@@ -5,6 +5,7 @@
 ## 功能范围
 
 - 启动自动建表并写入首批种子数据
+- 登录、注册和当前用户信息获取
 - 首页概览接口
 - 实时监控接口
 - 告警列表/详情/处理接口
@@ -29,6 +30,9 @@
 ## 关键接口
 
 - GET /api/v1/health
+- POST /api/v1/auth/login
+- POST /api/v1/auth/register
+- GET /api/v1/auth/me
 - GET /api/v1/dashboard/overview
 - GET /api/v1/monitor/realtime
 - POST /api/v1/monitor/control/start

@@ -3,7 +3,7 @@
     <!-- 顶部用户信息 -->
     <view class="user-info">
       <view class="user-avatar">
-        <text class="avatar-text">{{ userInfo.username.charAt(0).toUpperCase() }}</text>
+        <text class="avatar-text">{{ userAvatar }}</text>
       </view>
       <view class="user-details">
         <text class="username">{{ userInfo.username }}</text>
@@ -95,34 +95,49 @@
 </template>
 
 <script>
-import { request } from '../../utils/api';
+import { clearAuthState, request } from '../../utils/api';
 
 export default {
   data() {
     return {
       userInfo: {
-        username: "admin",
-        role: "管理员",
-        name: "张三",
-        email: "admin@example.com",
-        phone: "13800138000",
-        department: "技术部",
-        joinDate: "2026-01-01"
-      }
+        username: '',
+        role: '',
+        name: '',
+        email: '',
+        phone: '',
+        department: '',
+        joinDate: '',
+      },
+      loading: false,
     };
+  },
+  computed: {
+    userAvatar() {
+      if (!this.userInfo.username) {
+        return 'U';
+      }
+      return this.userInfo.username.charAt(0).toUpperCase();
+    }
   },
   onShow() {
     this.loadProfile();
   },
   methods: {
     async loadProfile() {
+      this.loading = true;
       try {
         const res = await request({ url: '/profile/me' });
         if (res && res.code === 200 && res.data) {
           this.userInfo = res.data;
         }
       } catch (error) {
+        if (String(error?.message || '').includes('Unauthorized')) {
+          return;
+        }
         uni.showToast({ title: '用户信息加载失败', icon: 'none' });
+      } finally {
+        this.loading = false;
       }
     },
     editProfile() {
@@ -146,8 +161,9 @@ export default {
         content: '确定要退出登录吗？',
         success: (res) => {
           if (res.confirm) {
+            clearAuthState();
             uni.showToast({ title: '已退出登录', duration: 1000 });
-            // 这里可以跳转到登录页面
+            uni.redirectTo({ url: '/auth/login' });
           }
         }
       });

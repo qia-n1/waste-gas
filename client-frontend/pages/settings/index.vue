@@ -26,27 +26,33 @@
         <view class="setting-item">
           <text class="setting-label">告警通知</text>
           <view class="setting-control">
-            <switch 
-              v-model="notificationSettings.alert" 
-              @change="onNotificationChange"
+            <input
+              type="checkbox"
+              class="setting-switch"
+              :checked="notificationSettings.alert"
+              @change="onNotificationChange('alert', $event)"
             />
           </view>
         </view>
         <view class="setting-item">
           <text class="setting-label">系统通知</text>
           <view class="setting-control">
-            <switch 
-              v-model="notificationSettings.system" 
-              @change="onNotificationChange"
+            <input
+              type="checkbox"
+              class="setting-switch"
+              :checked="notificationSettings.system"
+              @change="onNotificationChange('system', $event)"
             />
           </view>
         </view>
         <view class="setting-item">
           <text class="setting-label">设备离线通知</text>
           <view class="setting-control">
-            <switch 
-              v-model="notificationSettings.offline" 
-              @change="onNotificationChange"
+            <input
+              type="checkbox"
+              class="setting-switch"
+              :checked="notificationSettings.offline"
+              @change="onNotificationChange('offline', $event)"
             />
           </view>
         </view>
@@ -86,9 +92,11 @@
         <view class="setting-item">
           <text class="setting-label">深色模式</text>
           <view class="setting-control">
-            <switch 
-              v-model="displaySettings.darkMode" 
-              @change="onDisplayChange"
+            <input
+              type="checkbox"
+              class="setting-switch"
+              :checked="displaySettings.darkMode"
+              @change="onDisplayChange($event)"
             />
           </view>
         </view>
@@ -179,8 +187,8 @@ export default {
         language: "简体中文"
       },
       accountSettings: {
-        phone: "138****8000",
-        email: "admin@example.com"
+        phone: "",
+        email: ""
       },
       apiBaseUrl: '',
       cacheSize: "12.5 MB",
@@ -190,6 +198,7 @@ export default {
   onShow() {
     this.apiBaseUrl = getBaseUrl();
     this.loadSettings();
+    this.loadAccountSettings();
   },
   methods: {
     async loadSettings() {
@@ -203,6 +212,21 @@ export default {
         }
       } catch (error) {
         uni.showToast({ title: '设置加载失败', icon: 'none' });
+      }
+    },
+    async loadAccountSettings() {
+      try {
+        const res = await request({ url: '/profile/me' });
+        if (res && res.code === 200 && res.data) {
+          this.accountSettings = {
+            phone: res.data.phone || '',
+            email: res.data.email || ''
+          };
+        }
+      } catch (error) {
+        if (!String(error?.message || '').includes('Unauthorized')) {
+          uni.showToast({ title: '账户信息加载失败', icon: 'none' });
+        }
       }
     },
     async saveSettings() {
@@ -222,11 +246,13 @@ export default {
         uni.showToast({ title: '设置保存失败', icon: 'none' });
       }
     },
-    async onNotificationChange() {
+    async onNotificationChange(field, event) {
+      this.notificationSettings[field] = Boolean(event?.target?.checked);
       await this.saveSettings();
       uni.showToast({ title: '通知设置已更新', duration: 1000 });
     },
-    async onDisplayChange() {
+    async onDisplayChange(event) {
+      this.displaySettings.darkMode = Boolean(event?.target?.checked);
       await this.saveSettings();
       uni.showToast({ title: '显示设置已更新', duration: 1000 });
     },
@@ -355,6 +381,13 @@ export default {
 .setting-control {
   display: flex;
   align-items: center;
+}
+
+.setting-switch {
+  width: 36px;
+  height: 20px;
+  accent-color: #4CAF50;
+  cursor: pointer;
 }
 
 .setting-value {

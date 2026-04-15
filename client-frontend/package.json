@@ -4,13 +4,17 @@
   "description": "废气监测系统 UniApp 客户端",
   "main": "main.js",
   "scripts": {
-    "dev": "npx @dcloudio/uni-app dev",
-    "build": "npx @dcloudio/uni-app build"
+    "dev": "vite --host 0.0.0.0 --port 3005",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 4175"
   },
   "dependencies": {
-    "vue": "^3.5.32"
+    "vue": "^3.5.32",
+    "vue-router": "^4.6.4"
   },
   "devDependencies": {
-    "@dcloudio/uni-helper-json": "^1.0.11"
+    "@dcloudio/uni-helper-json": "^1.0.11",
+    "@vitejs/plugin-vue": "^5.2.4",
+    "vite": "^5.4.19"
   }
 }
