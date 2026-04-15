@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     jwt_algorithm: str = 'HS256'
     jwt_expire_minutes: int = 60
 
-    postgres_dsn: str = 'postgresql+asyncpg://postgres:postgres@localhost:5432/vocs'
+    postgres_dsn: str = 'postgresql+asyncpg://team:fwwb1234@98.142.241.155:5432/aqimonitor'
     redis_url: str = 'redis://localhost:6379/0'
 
     rag_enabled: bool = False

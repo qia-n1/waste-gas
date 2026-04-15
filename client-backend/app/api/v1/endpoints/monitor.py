@@ -3,7 +3,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.models.entities import DeviceInfo, SensorReading
+from app.models.entities import AreaSourcePoint, DeviceInfo, SensorReading
 
 router = APIRouter(prefix='/monitor', tags=['monitor'])
 
@@ -20,14 +20,7 @@ def _status(value: float, warning_low: float, warning_high: float, err_low: floa
 async def get_realtime_data(db: AsyncSession = Depends(get_db)) -> dict:
     latest = await db.scalar(select(SensorReading).order_by(desc(SensorReading.recorded_at)).limit(1))
     device = await db.scalar(select(DeviceInfo).where(DeviceInfo.device_id == 'DEV-001').limit(1))
-
-    recent_rows = (
-        await db.scalars(
-            select(SensorReading)
-            .order_by(desc(SensorReading.recorded_at))
-            .limit(24)
-        )
-    ).all()
+    recent_rows = (await db.scalars(select(SensorReading).order_by(desc(SensorReading.recorded_at)).limit(24))).all()
 
     trend = [
         {
@@ -69,6 +62,33 @@ async def get_realtime_data(db: AsyncSession = Depends(get_db)) -> dict:
                 'location': device.location if device else '-',
             },
             'trend': trend,
+        },
+    }
+
+
+@router.get('/map')
+async def get_map_points(db: AsyncSession = Depends(get_db)) -> dict:
+    points = (await db.scalars(select(AreaSourcePoint).order_by(AreaSourcePoint.id.asc()))).all()
+    nearest_alert = next((point for point in points if point.level == 'high'), points[0] if points else None)
+    return {
+        'code': 200,
+        'data': {
+            'points': [
+                {
+                    'id': point.id,
+                    'name': point.source_name,
+                    'x': point.x,
+                    'y': point.y,
+                    'concentration': round(point.concentration, 2),
+                    'status': point.status,
+                    'level': point.level,
+                    'trend': point.trend,
+                    'deviceId': point.device_id,
+                    'areaName': point.area_name,
+                }
+                for point in points
+            ],
+            'nearestAlertId': nearest_alert.id if nearest_alert else None,
         },
     }
 

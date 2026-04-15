@@ -1,96 +1,51 @@
 <template>
-  <view class="profile">
-    <!-- 顶部用户信息 -->
-    <view class="user-info">
-      <view class="user-avatar">
-        <text class="avatar-text">{{ userAvatar }}</text>
+  <view class="profile-page">
+    <view class="profile-hero">
+      <view class="hero-left">
+        <view class="user-avatar"><text class="avatar-text">{{ userAvatar }}</text></view>
+        <view class="user-details">
+          <text class="username">{{ userInfo.username || '未登录用户' }}</text>
+          <text class="user-role">{{ userInfo.role || '普通用户' }}</text>
+          <text class="user-area">负责区域：{{ areaText }}</text>
+        </view>
       </view>
-      <view class="user-details">
-        <text class="username">{{ userInfo.username }}</text>
-        <text class="user-role">{{ userInfo.role }}</text>
-      </view>
-      <view class="user-actions">
-        <button class="btn-edit" @click="editProfile">
-          <text>编辑</text>
-        </button>
+      <button class="btn-edit" @click="editProfile">编辑</button>
+    </view>
+
+    <view class="profile-card">
+      <view class="section-head"><view><text class="section-title">我的告警与处置</text><text class="section-desc">查看近期处置记录与巡检情况</text></view></view>
+      <view class="summary-grid">
+        <view class="summary-box"><text class="summary-label">我的处置</text><text class="summary-value">{{ disposals.length }}</text></view>
+        <view class="summary-box"><text class="summary-label">巡检记录</text><text class="summary-value">{{ inspections.length }}</text></view>
       </view>
     </view>
 
-    <!-- 系统功能 -->
-    <view class="system-functions">
-      <text class="section-title">系统功能</text>
-      <view class="function-list">
-        <view class="function-item" @click="navigateTo('/pages/monitor/realtime')">
-          <view class="function-icon">📊</view>
-          <text class="function-text">实时监控</text>
-          <text class="function-arrow">→</text>
-        </view>
-        <view class="function-item" @click="navigateTo('/pages/alerts/list')">
-          <view class="function-icon">⚠️</view>
-          <text class="function-text">告警中心</text>
-          <text class="function-arrow">→</text>
-        </view>
-        <view class="function-item" @click="navigateTo('/pages/settings/index')">
-          <view class="function-icon">⚙️</view>
-          <text class="function-text">设置</text>
-          <text class="function-arrow">→</text>
-        </view>
-      </view>
-    </view>
-
-    <!-- 个人信息 -->
-    <view class="personal-info">
-      <text class="section-title">个人信息</text>
+    <view class="profile-card">
+      <view class="section-head"><view><text class="section-title">个人信息</text><text class="section-desc">账号资料与组织信息</text></view></view>
       <view class="info-list">
-        <view class="info-item">
-          <text class="info-label">姓名</text>
-          <text class="info-value">{{ userInfo.name }}</text>
-        </view>
-        <view class="info-item">
-          <text class="info-label">邮箱</text>
-          <text class="info-value">{{ userInfo.email }}</text>
-        </view>
-        <view class="info-item">
-          <text class="info-label">电话</text>
-          <text class="info-value">{{ userInfo.phone }}</text>
-        </view>
-        <view class="info-item">
-          <text class="info-label">所属部门</text>
-          <text class="info-value">{{ userInfo.department }}</text>
-        </view>
-        <view class="info-item">
-          <text class="info-label">入职时间</text>
-          <text class="info-value">{{ userInfo.joinDate }}</text>
-        </view>
+        <view class="info-item"><text class="info-label">姓名</text><text class="info-value">{{ userInfo.name || '-' }}</text></view>
+        <view class="info-item"><text class="info-label">邮箱</text><text class="info-value">{{ userInfo.email || '-' }}</text></view>
+        <view class="info-item"><text class="info-label">电话</text><text class="info-value">{{ userInfo.phone || '-' }}</text></view>
+        <view class="info-item"><text class="info-label">所属部门</text><text class="info-value">{{ userInfo.department || '-' }}</text></view>
+        <view class="info-item"><text class="info-label">入职时间</text><text class="info-value">{{ userInfo.joinDate || '-' }}</text></view>
       </view>
     </view>
 
-    <!-- 其他功能 -->
-    <view class="other-functions">
-      <text class="section-title">其他</text>
-      <view class="function-list">
-        <view class="function-item" @click="showAbout">
-          <view class="function-icon">ℹ️</view>
-          <text class="function-text">关于我们</text>
-          <text class="function-arrow">→</text>
-        </view>
-        <view class="function-item" @click="showHelp">
-          <view class="function-icon">❓</view>
-          <text class="function-text">帮助中心</text>
-          <text class="function-arrow">→</text>
-        </view>
-        <view class="function-item" @click="showFeedback">
-          <view class="function-icon">💬</view>
-          <text class="function-text">意见反馈</text>
-          <text class="function-arrow">→</text>
-        </view>
+    <view class="profile-card">
+      <view class="section-head"><view><text class="section-title">我的处置记录</text><text class="section-desc">支持导出 CSV</text></view><text class="action-link" @click="exportDisposals">导出</text></view>
+      <view class="record-list">
+        <view v-for="item in disposals" :key="item.id" class="record-item"><text class="record-title">{{ item.result }}</text><text class="record-meta">{{ item.status }} · {{ item.createdAt }}</text></view>
       </view>
     </view>
 
-    <!-- 退出登录按钮 -->
-    <view class="logout-section">
-      <button class="btn-logout" @click="logout">退出登录</button>
+    <view class="profile-card">
+      <view class="section-head"><view><text class="section-title">个人巡检记录</text><text class="section-desc">最近巡检摘要</text></view></view>
+      <view class="record-list">
+        <view v-for="item in inspections" :key="item.id" class="record-item"><text class="record-title">{{ item.areaName }}</text><text class="record-meta">{{ item.summary }}</text><text class="record-meta">{{ item.createdAt }}</text></view>
+      </view>
     </view>
+
+    <view class="logout-section"><button class="btn-logout" @click="logout">退出登录</button></view>
   </view>
 </template>
 
@@ -100,245 +55,83 @@ import { clearAuthState, request } from '../../utils/api';
 export default {
   data() {
     return {
-      userInfo: {
-        username: '',
-        role: '',
-        name: '',
-        email: '',
-        phone: '',
-        department: '',
-        joinDate: '',
-      },
+      userInfo: { username: '', role: '', name: '', email: '', phone: '', department: '', joinDate: '', areas: [] },
+      disposals: [],
+      inspections: [],
       loading: false,
     };
   },
   computed: {
-    userAvatar() {
-      if (!this.userInfo.username) {
-        return 'U';
-      }
-      return this.userInfo.username.charAt(0).toUpperCase();
-    }
+    userAvatar() { return this.userInfo.username ? this.userInfo.username.charAt(0).toUpperCase() : 'U'; },
+    areaText() { return Array.isArray(this.userInfo.areas) && this.userInfo.areas.length ? this.userInfo.areas.join('、') : '未分配'; }
   },
-  onShow() {
-    this.loadProfile();
-  },
+  onShow() { this.loadProfile(); },
   methods: {
     async loadProfile() {
       this.loading = true;
       try {
-        const res = await request({ url: '/profile/me' });
-        if (res && res.code === 200 && res.data) {
-          this.userInfo = res.data;
-        }
+        const [profileRes, disposalRes, inspectionRes] = await Promise.all([
+          request({ url: '/profile/me' }),
+          request({ url: '/profile/disposals' }),
+          request({ url: '/profile/inspections' })
+        ]);
+        if (profileRes?.code === 200) this.userInfo = profileRes.data;
+        if (disposalRes?.code === 200) this.disposals = disposalRes.data;
+        if (inspectionRes?.code === 200) this.inspections = inspectionRes.data;
       } catch (error) {
-        if (String(error?.message || '').includes('Unauthorized')) {
-          return;
-        }
+        if (String(error?.message || '').includes('Unauthorized')) return;
         uni.showToast({ title: '用户信息加载失败', icon: 'none' });
       } finally {
         this.loading = false;
       }
     },
-    editProfile() {
-      uni.showToast({ title: '编辑个人信息', duration: 1000 });
-    },
-    navigateTo(url) {
-      uni.navigateTo({ url: url });
-    },
-    showAbout() {
-      uni.showToast({ title: '关于我们', duration: 1000 });
-    },
-    showHelp() {
-      uni.showToast({ title: '帮助中心', duration: 1000 });
-    },
-    showFeedback() {
-      uni.showToast({ title: '意见反馈', duration: 1000 });
+    editProfile() { uni.showToast({ title: '编辑个人信息', duration: 1000 }); },
+    async exportDisposals() {
+      try {
+        const res = await request({ url: '/alerts/exports/disposals' });
+        if (res?.code === 200) uni.showModal({ title: '导出内容', content: res.data.content.slice(0, 200) + '...' , showCancel: false });
+      } catch (error) {
+        uni.showToast({ title: '导出失败', icon: 'none' });
+      }
     },
     logout() {
-      uni.showModal({
-        title: '退出登录',
-        content: '确定要退出登录吗？',
-        success: (res) => {
-          if (res.confirm) {
-            clearAuthState();
-            uni.showToast({ title: '已退出登录', duration: 1000 });
-            uni.redirectTo({ url: '/auth/login' });
-          }
+      uni.showModal({ title: '退出登录', content: '确定要退出登录吗？', success: (res) => {
+        if (res.confirm) {
+          clearAuthState();
+          uni.showToast({ title: '已退出登录', duration: 1000 });
+          uni.reLaunch({ url: '/pages/auth/login' });
         }
-      });
+      }});
     }
   }
 };
 </script>
 
 <style>
-.profile {
-  padding: 20rpx;
-  background-color: #f5f5f5;
-  min-height: 100vh;
-}
-
-.user-info {
-  background-color: #4CAF50;
-  color: white;
-  padding: 40rpx;
-  border-radius: 16rpx;
-  margin-bottom: 20rpx;
-  display: flex;
-  align-items: center;
-  gap: 20rpx;
-}
-
-.user-avatar {
-  width: 100rpx;
-  height: 100rpx;
-  border-radius: 50%;
-  background-color: rgba(255, 255, 255, 0.2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 40rpx;
-  font-weight: bold;
-}
-
-.avatar-text {
-  color: white;
-}
-
-.user-details {
-  flex: 1;
-}
-
-.username {
-  font-size: 24rpx;
-  font-weight: bold;
-  margin-bottom: 8rpx;
-  display: block;
-}
-
-.user-role {
-  font-size: 18rpx;
-  opacity: 0.9;
-  display: block;
-}
-
-.btn-edit {
-  background-color: rgba(255, 255, 255, 0.2);
-  color: white;
-  border: none;
-  border-radius: 20rpx;
-  padding: 8rpx 20rpx;
-  font-size: 16rpx;
-}
-
-.system-functions {
-  background-color: white;
-  padding: 20rpx;
-  border-radius: 16rpx;
-  margin-bottom: 20rpx;
-}
-
-.section-title {
-  font-size: 24rpx;
-  font-weight: bold;
-  margin-bottom: 16rpx;
-  color: #333;
-}
-
-.function-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1rpx;
-}
-
-.function-item {
-  display: flex;
-  align-items: center;
-  padding: 20rpx;
-  background-color: #f9f9f9;
-  border-bottom: 1rpx solid #f0f0f0;
-}
-
-.function-item:last-child {
-  border-bottom: none;
-  border-radius: 0 0 12rpx 12rpx;
-}
-
-.function-item:first-child {
-  border-radius: 12rpx 12rpx 0 0;
-}
-
-.function-icon {
-  font-size: 24rpx;
-  margin-right: 16rpx;
-  width: 32rpx;
-  text-align: center;
-}
-
-.function-text {
-  flex: 1;
-  font-size: 18rpx;
-  color: #333;
-}
-
-.function-arrow {
-  font-size: 16rpx;
-  color: #999;
-}
-
-.personal-info {
-  background-color: white;
-  padding: 20rpx;
-  border-radius: 16rpx;
-  margin-bottom: 20rpx;
-}
-
-.info-list {
-  display: flex;
-  flex-direction: column;
-  gap: 16rpx;
-}
-
-.info-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16rpx;
-  background-color: #f9f9f9;
-  border-radius: 12rpx;
-}
-
-.info-label {
-  font-size: 16rpx;
-  color: #666;
-}
-
-.info-value {
-  font-size: 16rpx;
-  color: #333;
-  font-weight: 500;
-}
-
-.other-functions {
-  background-color: white;
-  padding: 20rpx;
-  border-radius: 16rpx;
-  margin-bottom: 20rpx;
-}
-
-.logout-section {
-  margin-bottom: 40rpx;
-}
-
-.btn-logout {
-  width: 100%;
-  background-color: white;
-  color: #ff4444;
-  border: 1rpx solid #ff4444;
-  border-radius: 12rpx;
-  padding: 20rpx;
-  font-size: 18rpx;
-  font-weight: 500;
-}
+.profile-page { min-height: 100vh; padding: 24rpx 24rpx calc(36rpx + env(safe-area-inset-bottom)); background: linear-gradient(180deg, #f7f3ff 0%, #fcfbff 52%, #ffffff 100%); }
+.profile-hero,.profile-card { margin-bottom: 22rpx; padding: 26rpx; border-radius: 28rpx; background: #fff; box-shadow: 0 16rpx 36rpx rgba(49,30,109,.06); }
+.profile-hero { display:flex; justify-content:space-between; align-items:center; gap:18rpx; background:linear-gradient(135deg,#7b61ff 0%,#8d74ff 50%,#b39cff 100%); }
+.hero-left { display:flex; align-items:center; gap:18rpx; flex:1; }
+.user-avatar { width:112rpx; height:112rpx; border-radius:34rpx; background:rgba(255,255,255,.18); display:flex; align-items:center; justify-content:center; font-size:42rpx; font-weight:800; }
+.avatar-text,.username,.user-role,.user-area,.btn-edit { color:#fff; }
+.username { display:block; font-size:31rpx; font-weight:800; }
+.user-role,.user-area { display:block; margin-top:8rpx; font-size:20rpx; opacity:.92; }
+.btn-edit { height:78rpx; padding:0 26rpx; border-radius:22rpx; background:rgba(255,255,255,.18); font-size:21rpx; }
+.btn-edit::after { border:none; }
+.section-head { display:flex; justify-content:space-between; align-items:center; gap:12rpx; margin-bottom:18rpx; }
+.section-title { display:block; font-size:31rpx; font-weight:800; color:#2d2454; }
+.section-desc { display:block; margin-top:8rpx; font-size:20rpx; color:#8c81a7; }
+.action-link { color:#7b61ff; font-size:20rpx; font-weight:700; }
+.summary-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:14rpx; }
+.summary-box,.info-item,.record-item { padding:20rpx; border-radius:22rpx; background:#faf8ff; }
+.summary-label,.info-label,.record-meta { display:block; font-size:18rpx; color:#9388ae; }
+.summary-value,.info-value,.record-title { display:block; margin-top:10rpx; font-size:23rpx; color:#2d2454; font-weight:700; }
+.info-list,.record-list { display:flex; flex-direction:column; gap:14rpx; }
+.info-item { display:flex; justify-content:space-between; align-items:center; gap:16rpx; }
+.info-value { text-align:right; }
+.record-title { margin-top:0; }
+.record-meta { margin-top:8rpx; line-height:1.6; }
+.logout-section { margin-top:24rpx; }
+.btn-logout { width:100%; height:96rpx; border-radius:22rpx; background:linear-gradient(135deg,#7b61ff 0%,#947dff 100%); color:#fff; font-size:23rpx; font-weight:700; }
+.btn-logout::after { border:none; }
 </style>

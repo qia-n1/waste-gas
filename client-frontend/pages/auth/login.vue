@@ -1,195 +1,132 @@
 <template>
   <view class="auth-page">
-    <view class="auth-card">
-      <text class="brand">废气监测系统</text>
-      <text class="subtitle">实时监控 · 智能预警</text>
+    <view class="bg-orb orb-left"></view>
+    <view class="bg-orb orb-right"></view>
+    <view class="bg-grid"></view>
 
-      <view class="tab-row">
-        <button
-          type="button"
-          class="tab-btn"
-          :class="{ active: mode === 'login' }"
-          @click="mode = 'login'"
-        >
-          登录
-        </button>
-        <button
-          type="button"
-          class="tab-btn"
-          :class="{ active: mode === 'register' }"
-          @click="mode = 'register'"
-        >
-          注册
-        </button>
-      </view>
+    <scroll-view scroll-y class="auth-scroll" :show-scrollbar="false">
+      <view class="auth-shell">
+        <view class="hero-panel">
+          <text class="hero-kicker">AIR GUARDIAN</text>
+          <text class="hero-title">废气监测系统</text>
+          <text class="hero-subtitle">用更清晰、更舒适的方式进入实时监控与告警中心。</text>
+          <view class="hero-tags">
+            <view class="hero-tag"><text class="tag-dot"></text><text class="tag-text">实时监控</text></view>
+            <view class="hero-tag"><text class="tag-dot"></text><text class="tag-text">智能预警</text></view>
+          </view>
+        </view>
 
-      <view v-if="mode === 'login'" class="form-area">
-        <label class="field-label">用户名</label>
-        <input v-model.trim="loginForm.username" class="field" placeholder="请输入用户名" />
+        <view class="auth-card">
+          <view class="card-top">
+            <view>
+              <text class="card-title">{{ mode === 'login' ? '欢迎回来' : '创建账号' }}</text>
+              <text class="card-subtitle">{{ mode === 'login' ? '登录后查看监测数据与告警信息' : '填写信息后即可自动进入系统' }}</text>
+            </view>
+            <view class="brand-badge">紫</view>
+          </view>
 
-        <label class="field-label">密码</label>
-        <input
-          v-model="loginForm.password"
-          class="field"
-          type="password"
-          placeholder="请输入密码"
-        />
+          <view class="tab-row">
+            <view class="tab-btn" :class="{ active: mode === 'login' }" @click="switchMode('login')">登录</view>
+            <view class="tab-btn" :class="{ active: mode === 'register' }" @click="switchMode('register')">注册</view>
+          </view>
 
-        <button type="button" class="submit-btn" @click="handleLogin">登录</button>
+          <view v-if="mode === 'login'" class="form-area">
+            <view class="field-group">
+              <text class="field-label">用户名</text>
+              <view class="field-wrap"><text class="field-icon">账号</text><input v-model.trim="loginForm.username" class="field" placeholder="请输入用户名" /></view>
+            </view>
+            <view class="field-group">
+              <text class="field-label">密码</text>
+              <view class="field-wrap"><text class="field-icon">密码</text><input v-model="loginForm.password" class="field" type="password" placeholder="请输入密码" /></view>
+            </view>
+            <button class="submit-btn" @click="handleLogin">立即登录</button>
+            <view class="hint-card"><text class="hint-title">快速提示</text><text class="hint-text">请输入后端真实账号，默认种子账号：admin / password</text></view>
+          </view>
 
-        <view class="hint">
-          <text>输入后端真实账号登录，默认种子账号：admin / password</text>
+          <view v-else class="form-area register-area">
+            <view class="field-group">
+              <text class="field-label">用户名</text>
+              <view class="field-wrap"><text class="field-icon">账号</text><input v-model.trim="registerForm.username" class="field" placeholder="请输入用户名" /></view>
+            </view>
+            <view class="field-grid">
+              <view class="field-group half-field">
+                <text class="field-label">姓名</text>
+                <view class="field-wrap"><text class="field-icon">姓名</text><input v-model.trim="registerForm.name" class="field" placeholder="请输入真实姓名" /></view>
+              </view>
+              <view class="field-group half-field">
+                <text class="field-label">电话</text>
+                <view class="field-wrap"><text class="field-icon">电话</text><input v-model.trim="registerForm.phone" class="field" placeholder="请输入手机号" /></view>
+              </view>
+            </view>
+            <view class="field-group">
+              <text class="field-label">邮箱</text>
+              <view class="field-wrap"><text class="field-icon">邮箱</text><input v-model.trim="registerForm.email" class="field" placeholder="请输入邮箱" /></view>
+            </view>
+            <view class="field-group">
+              <text class="field-label">部门</text>
+              <view class="field-wrap"><text class="field-icon">部门</text><input v-model.trim="registerForm.department" class="field" placeholder="请输入所属部门" /></view>
+            </view>
+            <view class="field-grid">
+              <view class="field-group half-field">
+                <text class="field-label">密码</text>
+                <view class="field-wrap"><text class="field-icon">密码</text><input v-model="registerForm.password" class="field" type="password" placeholder="至少 6 位" /></view>
+              </view>
+              <view class="field-group half-field">
+                <text class="field-label">确认密码</text>
+                <view class="field-wrap"><text class="field-icon">确认</text><input v-model="registerForm.confirmPassword" class="field" type="password" placeholder="再次输入密码" /></view>
+              </view>
+            </view>
+            <button class="submit-btn" @click="handleRegister">完成注册</button>
+            <view class="hint-card"><text class="hint-title">注册说明</text><text class="hint-text">注册成功后将自动登录，个人中心会展示你填写的资料。</text></view>
+          </view>
         </view>
       </view>
-
-      <view v-else class="form-area">
-        <label class="field-label">用户名</label>
-        <input v-model.trim="registerForm.username" class="field" placeholder="请输入用户名" />
-
-        <label class="field-label">姓名</label>
-        <input v-model.trim="registerForm.name" class="field" placeholder="请输入真实姓名" />
-
-        <label class="field-label">邮箱</label>
-        <input v-model.trim="registerForm.email" class="field" placeholder="请输入邮箱" />
-
-        <label class="field-label">电话</label>
-        <input v-model.trim="registerForm.phone" class="field" placeholder="请输入手机号" />
-
-        <label class="field-label">部门</label>
-        <input v-model.trim="registerForm.department" class="field" placeholder="请输入所属部门" />
-
-        <label class="field-label">密码</label>
-        <input
-          v-model="registerForm.password"
-          class="field"
-          type="password"
-          placeholder="请输入密码（至少6位）"
-        />
-
-        <label class="field-label">确认密码</label>
-        <input
-          v-model="registerForm.confirmPassword"
-          class="field"
-          type="password"
-          placeholder="请再次输入密码"
-        />
-
-        <button type="button" class="submit-btn" @click="handleRegister">注册</button>
-
-        <view class="hint">
-          <text>注册信息会写入后端，个人中心显示的就是这份资料。</text>
-        </view>
-      </view>
-    </view>
+    </scroll-view>
   </view>
 </template>
 
 <script>
 import { request, setAuthState } from '../../utils/api'
-
 export default {
   data() {
     return {
       mode: 'login',
-      loginForm: {
-        username: '',
-        password: '',
-      },
-      registerForm: {
-        username: '',
-        name: '',
-        email: '',
-        phone: '',
-        department: '',
-        password: '',
-        confirmPassword: '',
-      },
+      loginForm: { username: '', password: '' },
+      registerForm: { username: '', name: '', email: '', phone: '', department: '', password: '', confirmPassword: '' },
     }
   },
   methods: {
+    switchMode(mode) { this.mode = mode },
     completeLogin(payload) {
-      setAuthState({
-        token: payload.access_token,
-        user: payload.user,
-      })
+      setAuthState({ token: payload.access_token, user: payload.user })
       uni.showToast({ title: '登录成功', duration: 800 })
-      uni.redirectTo({ url: '/pages/index/index' })
+      uni.switchTab({ url: '/pages/index/index' })
     },
-
     async handleLogin() {
-      const username = this.loginForm.username
-      const password = this.loginForm.password
-
-      if (!username || !password) {
-        uni.showToast({ title: '请输入用户名和密码', icon: 'none' })
-        return
-      }
-
+      const { username, password } = this.loginForm
+      if (!username || !password) return uni.showToast({ title: '请输入用户名和密码', icon: 'none' })
       try {
-        const res = await request({
-          url: '/auth/login',
-          method: 'POST',
-          data: { username, password },
-        })
-
-        if (res && res.code === 200 && res.data?.access_token) {
-          this.completeLogin(res.data)
-          return
-        }
-
+        console.log('登录请求开始', { username, password })
+        const res = await request({ url: '/auth/login', method: 'POST', data: { username, password } })
+        console.log('登录请求响应', res)
+        if (res && res.code === 200 && res.data?.access_token) return this.completeLogin(res.data)
         uni.showToast({ title: '登录失败，请检查账号密码', icon: 'none' })
       } catch (error) {
+        console.error('登录请求错误', error)
         uni.showToast({ title: error?.message || '登录失败，请检查账号密码', icon: 'none' })
       }
     },
-
     async handleRegister() {
-      const username = this.registerForm.username
-      const name = this.registerForm.name
-      const email = this.registerForm.email
-      const phone = this.registerForm.phone
-      const department = this.registerForm.department
-      const password = this.registerForm.password
-      const confirmPassword = this.registerForm.confirmPassword
-
-      if (!username || !name || !email || !phone || !department || !password || !confirmPassword) {
-        uni.showToast({ title: '请完整填写注册信息', icon: 'none' })
-        return
-      }
-
-      if (password.length < 6) {
-        uni.showToast({ title: '密码至少 6 位', icon: 'none' })
-        return
-      }
-
-      if (password !== confirmPassword) {
-        uni.showToast({ title: '两次密码输入不一致', icon: 'none' })
-        return
-      }
-
+      const { username, name, email, phone, department, password, confirmPassword } = this.registerForm
+      if (!username || !name || !email || !phone || !department || !password || !confirmPassword) return uni.showToast({ title: '请完整填写注册信息', icon: 'none' })
+      if (password.length < 6) return uni.showToast({ title: '密码至少 6 位', icon: 'none' })
+      if (password !== confirmPassword) return uni.showToast({ title: '两次密码输入不一致', icon: 'none' })
       try {
-        const res = await request({
-          url: '/auth/register',
-          method: 'POST',
-          data: {
-            username,
-            name,
-            email,
-            phone,
-            department,
-            password,
-          },
-        })
-
-        if (res && res.code === 200 && res.data?.access_token) {
-          this.completeLogin(res.data)
-          return
-        }
-
+        const res = await request({ url: '/auth/register', method: 'POST', data: { username, name, email, phone, department, role: '普通用户', password } })
+        if (res && res.code === 200 && res.data?.access_token) return this.completeLogin(res.data)
         uni.showToast({ title: '注册失败，请稍后重试', icon: 'none' })
       } catch (error) {
-        const message = error?.message || '注册失败，请稍后重试'
-        uni.showToast({ title: message, icon: 'none' })
+        uni.showToast({ title: error?.message || '注册失败，请稍后重试', icon: 'none' })
       }
     },
   },
@@ -197,109 +134,48 @@ export default {
 </script>
 
 <style>
-.auth-page {
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24rpx;
-  background: linear-gradient(145deg, #f3f8f4 0%, #dcefe0 50%, #c7e4cf 100%);
-}
-
-.auth-card {
-  width: 100%;
-  max-width: 760rpx;
-  background: #ffffff;
-  border-radius: 24rpx;
-  padding: 36rpx;
-  box-shadow: 0 20rpx 60rpx rgba(39, 93, 53, 0.15);
-}
-
-.brand {
-  display: block;
-  text-align: center;
-  font-size: 42rpx;
-  font-weight: 700;
-  color: #1f6b34;
-}
-
-.subtitle {
-  display: block;
-  text-align: center;
-  margin-top: 10rpx;
-  font-size: 22rpx;
-  color: #6c7f72;
-}
-
-.tab-row {
-  margin-top: 28rpx;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14rpx;
-}
-
-.tab-btn {
-  border: none;
-  border-radius: 14rpx;
-  padding: 16rpx 12rpx;
-  background: #eef5f0;
-  color: #55705f;
-  font-size: 26rpx;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.tab-btn.active {
-  background: #2f8f4a;
-  color: #ffffff;
-}
-
-.form-area {
-  margin-top: 24rpx;
-}
-
-.field-label {
-  display: block;
-  font-size: 22rpx;
-  color: #4d6254;
-  margin-bottom: 10rpx;
-}
-
-.field {
-  width: 100%;
-  border: 1px solid #cfe0d4;
-  border-radius: 12rpx;
-  padding: 16rpx;
-  margin-bottom: 18rpx;
-  font-size: 24rpx;
-  outline: none;
-}
-
-.field:focus {
-  border-color: #2f8f4a;
-  box-shadow: 0 0 0 3px rgba(47, 143, 74, 0.12);
-}
-
-.submit-btn {
-  width: 100%;
-  border: none;
-  border-radius: 12rpx;
-  padding: 18rpx;
-  font-size: 28rpx;
-  font-weight: 700;
-  color: #fff;
-  background: #2f8f4a;
-  cursor: pointer;
-}
-
-.submit-btn:hover {
-  background: #25763c;
-}
-
-.hint {
-  margin-top: 16rpx;
-  text-align: center;
-  color: #6c7f72;
-  font-size: 20rpx;
+.auth-page { position: relative; min-height: 100vh; overflow: hidden; background: radial-gradient(circle at top left, rgba(255,255,255,.86) 0, rgba(255,255,255,0) 35%), linear-gradient(145deg, #f8f5ff 0%, #eee6ff 45%, #dccdfa 100%); }
+.auth-scroll { min-height: 100vh; }
+.auth-shell { position: relative; z-index: 2; min-height: 100vh; padding: 52rpx 28rpx calc(52rpx + env(safe-area-inset-bottom)); }
+.bg-orb { position: absolute; border-radius: 50%; filter: blur(10rpx); opacity: .7; }
+.orb-left { top: -120rpx; left: -80rpx; width: 360rpx; height: 360rpx; background: rgba(123,97,255,.18); }
+.orb-right { top: 220rpx; right: -120rpx; width: 320rpx; height: 320rpx; background: rgba(255,255,255,.68); }
+.bg-grid { position: absolute; inset: 0; opacity: .24; background-image: linear-gradient(rgba(123,97,255,.09) 1px, transparent 1px), linear-gradient(90deg, rgba(123,97,255,.09) 1px, transparent 1px); background-size: 36rpx 36rpx; }
+.hero-panel { padding: 18rpx 10rpx 26rpx; }
+.hero-kicker { display: inline-block; padding: 10rpx 18rpx; border-radius: 999rpx; background: rgba(255,255,255,.72); color: #7b61ff; font-size: 20rpx; font-weight: 700; letter-spacing: 2rpx; box-shadow: 0 10rpx 28rpx rgba(123,97,255,.08); }
+.hero-title { display: block; margin-top: 24rpx; font-size: 54rpx; line-height: 1.15; font-weight: 800; color: #2f225d; }
+.hero-subtitle { display: block; margin-top: 14rpx; max-width: 560rpx; font-size: 24rpx; line-height: 1.6; color: #6c6492; }
+.hero-tags { display: flex; flex-wrap: wrap; gap: 14rpx; margin-top: 24rpx; }
+.hero-tag { display: flex; align-items: center; gap: 10rpx; padding: 12rpx 18rpx; border-radius: 999rpx; background: rgba(255,255,255,.72); color: #574e82; box-shadow: 0 12rpx 32rpx rgba(123,97,255,.08); }
+.tag-dot { width: 12rpx; height: 12rpx; border-radius: 50%; background: linear-gradient(135deg, #7b61ff 0%, #a78bfa 100%); }
+.tag-text { font-size: 22rpx; font-weight: 600; }
+.auth-card { margin-top: 18rpx; background: rgba(255,255,255,.9); border: 1rpx solid rgba(255,255,255,.7); border-radius: 32rpx; padding: 32rpx; box-shadow: 0 28rpx 70rpx rgba(90,67,178,.16); }
+.card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 20rpx; }
+.card-title { display: block; font-size: 40rpx; font-weight: 800; color: #24184d; }
+.card-subtitle { display: block; margin-top: 8rpx; font-size: 22rpx; line-height: 1.5; color: #73698e; }
+.brand-badge { min-width: 72rpx; height: 72rpx; border-radius: 22rpx; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #7b61ff 0%, #a78bfa 100%); color: #fff; font-size: 28rpx; font-weight: 800; box-shadow: 0 14rpx 34rpx rgba(123,97,255,.24); }
+.tab-row { margin-top: 30rpx; padding: 10rpx; display: grid; grid-template-columns: 1fr 1fr; gap: 12rpx; background: #f2ecff; border-radius: 22rpx; }
+.tab-btn { border-radius: 16rpx; padding: 18rpx 12rpx; text-align: center; color: #766d95; font-size: 26rpx; font-weight: 700; }
+.tab-btn.active { background: linear-gradient(135deg, #7b61ff 0%, #8f76ff 100%); color: #fff; box-shadow: 0 12rpx 24rpx rgba(123,97,255,.2); }
+.form-area { margin-top: 28rpx; }
+.field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18rpx; }
+.field-group { margin-bottom: 18rpx; }
+.half-field { margin-bottom: 0; }
+.field-label { display: block; margin-bottom: 10rpx; font-size: 22rpx; font-weight: 600; color: #5c5476; }
+.field-wrap { display: flex; align-items: center; min-height: 96rpx; padding: 0 22rpx; background: #fff; border: 2rpx solid #ece6ff; border-radius: 20rpx; box-shadow: 0 10rpx 24rpx rgba(123,97,255,.06); }
+.field-wrap:focus-within { border-color: #8d73ff; box-shadow: 0 0 0 8rpx rgba(123,97,255,.09); }
+.field-icon { flex-shrink: 0; min-width: 64rpx; margin-right: 14rpx; font-size: 20rpx; font-weight: 700; color: #927dff; }
+.field { width: 100%; height: 96rpx; font-size: 24rpx; color: #2c2548; }
+.submit-btn { width: 100%; height: 96rpx; margin-top: 10rpx; border: none; border-radius: 22rpx; background: linear-gradient(135deg, #7b61ff 0%, #a78bfa 100%); color: #fff; font-size: 30rpx; font-weight: 800; letter-spacing: 2rpx; box-shadow: 0 18rpx 34rpx rgba(123,97,255,.22); }
+.submit-btn::after { border: none; }
+.hint-card { margin-top: 18rpx; padding: 20rpx 22rpx; border-radius: 20rpx; background: linear-gradient(180deg, #f8f5ff 0%, #f3eeff 100%); }
+.hint-title { display: block; font-size: 20rpx; font-weight: 700; color: #6c55d9; }
+.hint-text { display: block; margin-top: 8rpx; font-size: 20rpx; line-height: 1.6; color: #756b96; }
+@media screen and (max-width: 640rpx) {
+  .auth-shell { padding-left: 20rpx; padding-right: 20rpx; }
+  .auth-card { padding: 26rpx; border-radius: 28rpx; }
+  .hero-title { font-size: 48rpx; }
+  .field-grid { grid-template-columns: 1fr; gap: 0; }
+  .half-field { margin-bottom: 18rpx; }
 }
 </style>

@@ -1,9 +1,3 @@
-<template>
-  <view class="app-container">
-    <router-view />
-  </view>
-</template>
-
 <script>
 export default {
   name: 'App',
@@ -20,44 +14,47 @@ export default {
 </script>
 
 <style>
-/* 全局样式 */
+:root {
+  --primary: #7B61FF;
+  --primary-light: #A78BFA;
+  --bg: #ffffff;
+  --bg-soft: #f8f5ff;
+  --text-main: #1f2937;
+  --text-second: #6b7280;
+}
+
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
 }
 
-.app-container {
-  min-height: 100vh;
-  background-color: #f5f5f5;
-}
-
 /* 通用样式 */
 .section-title {
-  font-size: 24rpx;
+  font-size: 31rpx;
   font-weight: bold;
   margin-bottom: 16rpx;
-  color: #333;
+  color: var(--text-main);
 }
 
 /* 按钮样式 */
 .btn-primary {
-  background-color: #4CAF50;
+  background-color: var(--primary);
   color: white;
   border: none;
   border-radius: 12rpx;
   padding: 16rpx;
-  font-size: 18rpx;
+  font-size: 23rpx;
   font-weight: 500;
 }
 
 .btn-secondary {
   background-color: white;
-  color: #4CAF50;
-  border: 1rpx solid #4CAF50;
+  color: var(--primary);
+  border: 1rpx solid var(--primary);
   border-radius: 12rpx;
   padding: 16rpx;
-  font-size: 18rpx;
+  font-size: 23rpx;
   font-weight: 500;
 }
 
@@ -67,7 +64,7 @@ export default {
   border-radius: 16rpx;
   padding: 20rpx;
   margin-bottom: 20rpx;
-  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.05);
+  box-shadow: 0 8rpx 24rpx rgba(123, 97, 255, 0.08);
 }
 
 /* 列表项样式 */
@@ -86,12 +83,12 @@ export default {
 .status-tag {
   padding: 4rpx 12rpx;
   border-radius: 12rpx;
-  font-size: 14rpx;
+  font-size: 18rpx;
 }
 
 .status-tag.normal {
-  background-color: #e8f5e8;
-  color: #4CAF50;
+  background-color: #f3f0ff;
+  color: var(--primary);
 }
 
 .status-tag.warning {
@@ -123,7 +120,7 @@ export default {
 }
 
 .empty-text {
-  font-size: 18rpx;
+  font-size: 23rpx;
   color: #999;
   margin-top: 16rpx;
 }

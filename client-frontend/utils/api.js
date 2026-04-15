@@ -1,4 +1,4 @@
-const DEFAULT_BASE_URL = 'http://127.0.0.1:8002/api/v1';
+const DEFAULT_BASE_URL = 'http://localhost:8002/api/v1';
 const AUTH_TOKEN_KEY = 'authToken';
 const AUTH_USER_KEY = 'authUser';
 
@@ -53,12 +53,25 @@ function removeStorageValue(key) {
 }
 
 export function getBaseUrl() {
-  const custom = uni.getStorageSync('apiBaseUrl');
-  return custom || DEFAULT_BASE_URL;
+  try {
+    if (typeof uni !== 'undefined' && typeof uni.getStorageSync === 'function') {
+      const custom = uni.getStorageSync('apiBaseUrl');
+      return custom || DEFAULT_BASE_URL;
+    }
+  } catch {
+    // Fall back to default below
+  }
+  return DEFAULT_BASE_URL;
 }
 
 export function setBaseUrl(baseUrl) {
-  uni.setStorageSync('apiBaseUrl', baseUrl);
+  try {
+    if (typeof uni !== 'undefined' && typeof uni.setStorageSync === 'function') {
+      uni.setStorageSync('apiBaseUrl', baseUrl);
+    }
+  } catch {
+    // Ignore storage failures in constrained environments
+  }
 }
 
 export function getAuthToken() {
@@ -96,7 +109,10 @@ export function clearAuthState() {
 export function request(options) {
   const { url, method = 'GET', data, header = {} } = options;
   const token = getAuthToken();
-  const requestHeader = { ...header };
+  const requestHeader = {
+    'Content-Type': 'application/json',
+    ...header
+  };
 
   if (token) {
     requestHeader.Authorization = `Bearer ${token}`;
@@ -112,7 +128,7 @@ export function request(options) {
         if (res.statusCode === 401) {
           clearAuthState();
           if (typeof uni.redirectTo === 'function') {
-            uni.redirectTo({ url: '/auth/login' });
+            uni.redirectTo({ url: '/pages/auth/login' });
           }
           reject(new Error('Unauthorized'));
           return;
@@ -122,7 +138,17 @@ export function request(options) {
           resolve(res.data);
           return;
         }
-        reject(new Error(`HTTP ${res.statusCode}`));
+        let message = `HTTP ${res.statusCode}`;
+        if (res?.data?.detail) {
+          if (Array.isArray(res.data.detail)) {
+            message = res.data.detail.map(item => item.msg).join('；');
+          } else if (typeof res.data.detail === 'string') {
+            message = res.data.detail;
+          }
+        } else if (res?.data?.message) {
+          message = res.data.message;
+        }
+        reject(new Error(message));
       },
       fail: (err) => {
         reject(err);
