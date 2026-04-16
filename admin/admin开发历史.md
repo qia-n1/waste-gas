@@ -204,3 +204,42 @@ admin 前端 ──→ admin 后端 (8003)
 | `routers/alerts.py` | 告警管理 + 诊断 |
 | `routers/users.py` | 用户管理 |
 | `services/vocs_proxy.py` | ML 服务代理（vocs_server + ensemble_docker） |
+
+---
+
+## Phase 7：模型服务联调与前端联动
+
+### 环境修复
+- 安装 PyTorch CPU 版本 (`torch 2.8.0+cpu`)，解决两个模型服务的 `ModuleNotFoundError: No module named 'torch'`
+- 修复 ensemble_docker `api_src/config.py` Python 3.9 兼容性：`tuple[...] | tuple[()]` → `Union[Tuple[...], Tuple[()]]`，添加 `from __future__ import annotations`
+- 创建缺失的 `api_src/schemas.py`（`SensorData` Pydantic 模型），修复 `features.py` 导入错误
+- 修复 Vite 代理端口：`/api` 从 `localhost:8002` → `localhost:8003`
+
+### 前端改造
+
+#### EquipmentStatusChart → 细分指标贡献度
+- 标题从"设备状态分布"改为"细分指标贡献度"（当有 attribution 数据时）
+- 饼图数据来源改为 `feature_contributions`，比例按 `ratio` 设置
+- 图例显示 feature 名称 + 百分比（如 `coating_flow 81%`）
+- 中心数字从"在线设备"改为"预测均值"（`attribution.target`）
+- 按 group 分色：废气源与环境组(青)、转轮浓缩系统(琥珀)、RTO焚烧系统(红)
+- 当 ensemble 不可用时 fallback 回原始设备状态饼图
+
+#### FactoryScene 超标红色闪烁
+- 新增 `isExceedWarning` prop
+- 当 `alertLevel !== "normal"` 时，园区工艺场景边框添加 `warning-pulse` CSS 动画
+- 动画效果：红色边框 + box-shadow 渐变闪烁（2s 周期，ease-in-out）
+
+#### VocsTrendChart 高度修复
+- 卡片从 `height: 208px` 改为 `flex: 0 0 380px`，图表区域充足
+- Y 轴改为 `min: 0, splitNumber: 4, minInterval: 10`，低数据时刻度更合理
+
+### 数据链路验证
+- `predictionType: DLinear-PCA-Ensemble`（非 Fallback）
+- `confidence: 88%`
+- `attribution.feature_contributions` 完整返回（coating_flow 81.2% 主因）
+- `group_contributions` 三组聚合正常
+- 预测序列 24 步，值域 33.0~38.6 mg/m³
+
+### 启动脚本
+- 创建 `admin/start_admin.bat` 一键启动全部 4 个服务

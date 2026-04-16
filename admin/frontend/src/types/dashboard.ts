@@ -68,6 +68,7 @@ export interface DashboardOverview {
   decision: DecisionContent;
   continuousAlerts: ContinuousAlert[];
   factoryNodes: FactoryNode[];
+  attribution?: Attribution;
 }
 
 export interface EquipmentStatusItem {
@@ -80,6 +81,31 @@ export interface EquipmentStatusResponse {
   total: number;
   online: number;
   items: EquipmentStatusItem[];
+}
+
+export interface FeatureContribution {
+  feature: string;
+  group: string;
+  ratio: number;
+  contribution: number;
+}
+
+export interface GroupContribution {
+  group: string;
+  contribution: number;
+}
+
+export interface Attribution {
+  baseline: number;
+  target: number;
+  total_increment: number;
+  feature_contributions: FeatureContribution[];
+  group_contributions: GroupContribution[];
+  heatmap?: {
+    time_steps: string[];
+    feature_groups: string[];
+    contribution_matrix: number[][];
+  };
 }
 
 export interface HeatmapResponse {

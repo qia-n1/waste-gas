@@ -8,6 +8,7 @@ const props = defineProps<{
   nodes: FactoryNode[];
   currentVocs: number;
   systemPhase: string;
+  isExceedWarning?: boolean;
 }>();
 
 const sceneRef = ref<HTMLDivElement | null>(null);
@@ -156,7 +157,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="panel-card factory-card">
+  <section class="panel-card factory-card" :class="{ 'exceed-warning': isExceedWarning }">
     <div class="panel-title">园区工艺场景</div>
     <div class="factory-meta">
       <span>系统阶段：{{ systemPhase }}</span>
@@ -223,5 +224,28 @@ onBeforeUnmount(() => {
   height: 10px;
   border-radius: 50%;
   box-shadow: 0 0 12px currentColor;
+}
+
+/* ── Exceed Warning: red pulsing glow border ── */
+.exceed-warning {
+  animation: warning-pulse 2s ease-in-out infinite;
+  border: 1.5px solid rgba(255, 60, 60, 0.6);
+}
+
+@keyframes warning-pulse {
+  0%, 100% {
+    box-shadow:
+      inset 0 0 18px rgba(255, 60, 60, 0.08),
+      0 0 12px rgba(255, 60, 60, 0.15),
+      0 0 32px rgba(255, 60, 60, 0.08);
+    border-color: rgba(255, 60, 60, 0.35);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 28px rgba(255, 60, 60, 0.18),
+      0 0 24px rgba(255, 60, 60, 0.45),
+      0 0 64px rgba(255, 60, 60, 0.2);
+    border-color: rgba(255, 60, 60, 0.85);
+  }
 }
 </style>

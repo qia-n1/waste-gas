@@ -127,7 +127,7 @@ onBeforeUnmount(() => {
   >
     <template #left>
       <VocsTrendChart :trend="dashboardStore.overview.trend" />
-      <EquipmentStatusChart :data="dashboardStore.equipmentStatus" />
+      <EquipmentStatusChart :data="dashboardStore.equipmentStatus" :attribution="dashboardStore.attribution" />
       <AnomalyHeatmap :data="dashboardStore.heatmap" />
     </template>
 
@@ -136,6 +136,7 @@ onBeforeUnmount(() => {
         :nodes="dashboardStore.overview.factoryNodes"
         :current-vocs="dashboardStore.overview.metrics.currentVocs"
         :system-phase="dashboardStore.overview.metrics.systemPhase"
+        :is-exceed-warning="dashboardStore.isExceedWarning"
       />
     </template>
 

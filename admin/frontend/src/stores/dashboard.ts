@@ -3,6 +3,7 @@ import { defineStore } from "pinia";
 
 import client from "@/api/client";
 import type {
+  Attribution,
   DashboardOverview,
   EquipmentStatusResponse,
   FactoryNode,
@@ -127,6 +128,8 @@ export const useDashboardStore = defineStore("dashboard", () => {
   const overview = ref<DashboardOverview>(createOverview());
   const equipmentStatus = ref<EquipmentStatusResponse>(createEquipment());
   const heatmap = ref<HeatmapResponse>(createHeatmap());
+  const attribution = ref<Attribution | null>(null);
+  const isExceedWarning = ref(false);
   const loading = ref(false);
   const connected = ref(false);
 
@@ -143,6 +146,8 @@ export const useDashboardStore = defineStore("dashboard", () => {
       overview.value = overviewResponse.data;
       equipmentStatus.value = equipmentResponse.data;
       heatmap.value = heatmapResponse.data;
+      attribution.value = overviewResponse.data.attribution ?? null;
+      isExceedWarning.value = overview.value.metrics.alertLevel !== "normal";
     } finally {
       loading.value = false;
     }
@@ -226,6 +231,8 @@ export const useDashboardStore = defineStore("dashboard", () => {
     overview,
     equipmentStatus,
     heatmap,
+    attribution,
+    isExceedWarning,
     loading,
     connected,
     currentAlertLevel,
