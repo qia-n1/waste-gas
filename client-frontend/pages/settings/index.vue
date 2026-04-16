@@ -10,7 +10,15 @@
     </view>
 
     <view class="setting-card">
-      <view class="card-head"><text class="section-title">消息推送</text><text class="section-desc">告警、系统、设备离线提醒开关</text></view>
+      <view class="card-head"><text class="section-title">快捷入口</text><text class="section-desc">进入新增核心业务页面</text></view>
+      <view class="setting-list">
+        <view class="setting-item" @click="navigateTo('/pages/ai/chat')"><text class="setting-label">AI 助手</text><view class="setting-value"><text class="setting-arrow">→</text></view></view>
+        <view class="setting-item" @click="navigateTo('/pages/area/index')"><text class="setting-label">我的区域</text><view class="setting-value"><text class="setting-arrow">→</text></view></view>
+        <view class="setting-item" @click="navigateTo('/pages/records/index')"><text class="setting-label">处置记录</text><view class="setting-value"><text class="setting-arrow">→</text></view></view>
+      </view>
+    </view>
+
+    <view class="setting-card">
       <view class="setting-list">
         <view class="setting-item"><text class="setting-label">告警通知</text><view class="setting-control"><input type="checkbox" class="setting-switch" :checked="notificationSettings.alert" @change="onNotificationChange('alert', $event)" /></view></view>
         <view class="setting-item"><text class="setting-label">系统通知</text><view class="setting-control"><input type="checkbox" class="setting-switch" :checked="notificationSettings.system" @change="onNotificationChange('system', $event)" /></view></view>
@@ -119,6 +127,9 @@ export default {
       } catch (error) {
         uni.showToast({ title: error?.message || '修改失败', icon: 'none' });
       }
+    },
+    navigateTo(url) {
+      uni.navigateTo({ url });
     }
   }
 };

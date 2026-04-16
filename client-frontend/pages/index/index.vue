@@ -62,6 +62,20 @@
     <view class="overview-card">
       <view class="section-head compact">
         <view>
+          <text class="section-title">功能入口</text>
+          <text class="section-desc">快速进入 AI 助手、管理区域与处置记录</text>
+        </view>
+      </view>
+      <view class="quick-buttons top-entries">
+        <view class="quick-button" @click="navigateTo('/pages/ai/chat')"><text class="quick-title">AI 助手</text><text class="quick-sub">多轮对话分析</text></view>
+        <view class="quick-button" @click="navigateTo('/pages/area/index')"><text class="quick-title">我的区域</text><text class="quick-sub">查看设备与区域</text></view>
+        <view class="quick-button" @click="navigateTo('/pages/records/index')"><text class="quick-title">处置记录</text><text class="quick-sub">查看并导出</text></view>
+      </view>
+    </view>
+
+    <view class="overview-card">
+      <view class="section-head compact">
+        <view>
           <text class="section-title">实时概览</text>
           <text class="section-desc">当前 VOCs、温度、湿度核心指标</text>
         </view>
@@ -103,15 +117,20 @@ export default {
           request({ url: '/dashboard/overview' }),
           request({ url: '/monitor/map' })
         ]);
+        console.log('overview response:', overview);
+        console.log('mapRes response:', mapRes);
         if (overview?.code === 200 && overview.data) {
           this.realTimeData = overview.data.realTimeData || this.realTimeData;
+          console.log('realTimeData set:', this.realTimeData);
         }
         if (mapRes?.code === 200 && mapRes.data) {
           this.mapPoints = mapRes.data.points || [];
           this.nearestAlertId = mapRes.data.nearestAlertId;
           this.selectedPoint = this.mapPoints.find(item => item.id === this.nearestAlertId) || this.mapPoints[0] || null;
+          console.log('mapPoints set:', this.mapPoints);
         }
       } catch (error) {
+        console.error('loadOverview error:', error);
         uni.showToast({ title: '首页数据加载失败', icon: 'none' });
       }
     },
@@ -186,6 +205,7 @@ export default {
 .point-info-grid { grid-template-columns:repeat(3,1fr); }
 .metric-grid { grid-template-columns:repeat(3,1fr); }
 .quick-buttons { grid-template-columns:repeat(3,1fr); margin-top:18rpx; }
+.top-entries { margin-top:0; }
 .info-box,.metric-box,.quick-button { padding:18rpx; border-radius:22rpx; background:#faf8ff; }
 .info-label,.metric-label { display:block; font-size:18rpx; color:#9489af; }
 .info-value,.metric-value { display:block; margin-top:10rpx; font-size:24rpx; font-weight:800; color:#2d2454; }

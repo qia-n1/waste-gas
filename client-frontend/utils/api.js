@@ -119,12 +119,15 @@ export function request(options) {
   }
 
   return new Promise((resolve, reject) => {
+    const finalUrl = `${getBaseUrl()}${url}`;
+    console.log('request start', { url: finalUrl, method, data });
     uni.request({
-      url: `${getBaseUrl()}${url}`,
+      url: finalUrl,
       method,
       data,
       header: requestHeader,
       success: (res) => {
+        console.log('request success', { url: finalUrl, statusCode: res.statusCode, data: res.data });
         if (res.statusCode === 401) {
           clearAuthState();
           if (typeof uni.redirectTo === 'function') {
@@ -151,6 +154,7 @@ export function request(options) {
         reject(new Error(message));
       },
       fail: (err) => {
+        console.error('request fail', { url: finalUrl, err });
         reject(err);
       }
     });

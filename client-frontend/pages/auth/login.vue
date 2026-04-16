@@ -39,7 +39,7 @@
               <text class="field-label">密码</text>
               <view class="field-wrap"><text class="field-icon">密码</text><input v-model="loginForm.password" class="field" type="password" placeholder="请输入密码" /></view>
             </view>
-            <button class="submit-btn" @click="handleLogin">立即登录</button>
+            <view class="submit-btn" @click="handleLogin">立即登录</view>
             <view class="hint-card"><text class="hint-title">快速提示</text><text class="hint-text">请输入后端真实账号，默认种子账号：admin / password</text></view>
           </view>
 
@@ -76,7 +76,7 @@
                 <view class="field-wrap"><text class="field-icon">确认</text><input v-model="registerForm.confirmPassword" class="field" type="password" placeholder="再次输入密码" /></view>
               </view>
             </view>
-            <button class="submit-btn" @click="handleRegister">完成注册</button>
+            <view class="submit-btn" @click="handleRegister">完成注册</view>
             <view class="hint-card"><text class="hint-title">注册说明</text><text class="hint-text">注册成功后将自动登录，个人中心会展示你填写的资料。</text></view>
           </view>
         </view>
@@ -86,13 +86,18 @@
 </template>
 
 <script>
-import { request, setAuthState } from '../../utils/api'
+import { getAuthToken, request, setAuthState } from '../../utils/api'
 export default {
   data() {
     return {
       mode: 'login',
       loginForm: { username: '', password: '' },
       registerForm: { username: '', name: '', email: '', phone: '', department: '', password: '', confirmPassword: '' },
+    }
+  },
+  onShow() {
+    if (getAuthToken()) {
+      uni.switchTab({ url: '/pages/index/index' })
     }
   },
   methods: {
@@ -117,15 +122,28 @@ export default {
       }
     },
     async handleRegister() {
+      console.log('handleRegister called', this.registerForm)
       const { username, name, email, phone, department, password, confirmPassword } = this.registerForm
-      if (!username || !name || !email || !phone || !department || !password || !confirmPassword) return uni.showToast({ title: '请完整填写注册信息', icon: 'none' })
-      if (password.length < 6) return uni.showToast({ title: '密码至少 6 位', icon: 'none' })
-      if (password !== confirmPassword) return uni.showToast({ title: '两次密码输入不一致', icon: 'none' })
+      if (!username || !name || !email || !phone || !department || !password || !confirmPassword) {
+        console.log('表单验证失败：有字段为空')
+        return uni.showToast({ title: '请完整填写注册信息', icon: 'none' })
+      }
+      if (password.length < 6) {
+        console.log('表单验证失败：密码长度不足')
+        return uni.showToast({ title: '密码至少 6 位', icon: 'none' })
+      }
+      if (password !== confirmPassword) {
+        console.log('表单验证失败：密码不一致')
+        return uni.showToast({ title: '两次密码输入不一致', icon: 'none' })
+      }
       try {
+        console.log('开始发送注册请求')
         const res = await request({ url: '/auth/register', method: 'POST', data: { username, name, email, phone, department, role: '普通用户', password } })
+        console.log('注册请求响应', res)
         if (res && res.code === 200 && res.data?.access_token) return this.completeLogin(res.data)
         uni.showToast({ title: '注册失败，请稍后重试', icon: 'none' })
       } catch (error) {
+        console.error('注册请求错误', error)
         uni.showToast({ title: error?.message || '注册失败，请稍后重试', icon: 'none' })
       }
     },
@@ -137,10 +155,10 @@ export default {
 .auth-page { position: relative; min-height: 100vh; overflow: hidden; background: radial-gradient(circle at top left, rgba(255,255,255,.86) 0, rgba(255,255,255,0) 35%), linear-gradient(145deg, #f8f5ff 0%, #eee6ff 45%, #dccdfa 100%); }
 .auth-scroll { min-height: 100vh; }
 .auth-shell { position: relative; z-index: 2; min-height: 100vh; padding: 52rpx 28rpx calc(52rpx + env(safe-area-inset-bottom)); }
-.bg-orb { position: absolute; border-radius: 50%; filter: blur(10rpx); opacity: .7; }
+.bg-orb { position: absolute; border-radius: 50%; filter: blur(10rpx); opacity: .7; pointer-events: none; }
 .orb-left { top: -120rpx; left: -80rpx; width: 360rpx; height: 360rpx; background: rgba(123,97,255,.18); }
 .orb-right { top: 220rpx; right: -120rpx; width: 320rpx; height: 320rpx; background: rgba(255,255,255,.68); }
-.bg-grid { position: absolute; inset: 0; opacity: .24; background-image: linear-gradient(rgba(123,97,255,.09) 1px, transparent 1px), linear-gradient(90deg, rgba(123,97,255,.09) 1px, transparent 1px); background-size: 36rpx 36rpx; }
+.bg-grid { position: absolute; inset: 0; opacity: .24; background-image: linear-gradient(rgba(123,97,255,.09) 1px, transparent 1px), linear-gradient(90deg, rgba(123,97,255,.09) 1px, transparent 1px); background-size: 36rpx 36rpx; pointer-events: none; }
 .hero-panel { padding: 18rpx 10rpx 26rpx; }
 .hero-kicker { display: inline-block; padding: 10rpx 18rpx; border-radius: 999rpx; background: rgba(255,255,255,.72); color: #7b61ff; font-size: 20rpx; font-weight: 700; letter-spacing: 2rpx; box-shadow: 0 10rpx 28rpx rgba(123,97,255,.08); }
 .hero-title { display: block; margin-top: 24rpx; font-size: 54rpx; line-height: 1.15; font-weight: 800; color: #2f225d; }
@@ -166,8 +184,9 @@ export default {
 .field-wrap:focus-within { border-color: #8d73ff; box-shadow: 0 0 0 8rpx rgba(123,97,255,.09); }
 .field-icon { flex-shrink: 0; min-width: 64rpx; margin-right: 14rpx; font-size: 20rpx; font-weight: 700; color: #927dff; }
 .field { width: 100%; height: 96rpx; font-size: 24rpx; color: #2c2548; }
-.submit-btn { width: 100%; height: 96rpx; margin-top: 10rpx; border: none; border-radius: 22rpx; background: linear-gradient(135deg, #7b61ff 0%, #a78bfa 100%); color: #fff; font-size: 30rpx; font-weight: 800; letter-spacing: 2rpx; box-shadow: 0 18rpx 34rpx rgba(123,97,255,.22); }
+.submit-btn { display: flex; align-items: center; justify-content: center; width: 100%; height: 96rpx; margin-top: 10rpx; border: none; border-radius: 22rpx; background: linear-gradient(135deg, #7b61ff 0%, #a78bfa 100%); color: #fff; font-size: 30rpx; font-weight: 800; letter-spacing: 2rpx; box-shadow: 0 18rpx 34rpx rgba(123,97,255,.22); position: relative; z-index: 10; }
 .submit-btn::after { border: none; }
+.submit-btn:active { opacity: 0.85; transform: scale(0.98); }
 .hint-card { margin-top: 18rpx; padding: 20rpx 22rpx; border-radius: 20rpx; background: linear-gradient(180deg, #f8f5ff 0%, #f3eeff 100%); }
 .hint-title { display: block; font-size: 20rpx; font-weight: 700; color: #6c55d9; }
 .hint-text { display: block; margin-top: 8rpx; font-size: 20rpx; line-height: 1.6; color: #756b96; }

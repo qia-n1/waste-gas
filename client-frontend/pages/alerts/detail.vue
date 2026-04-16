@@ -41,8 +41,8 @@
       <text class="section-title">AI 诊断</text>
       <view class="ai-box"><text class="ai-title">原因分析</text><text class="ai-text">{{ alert.aiDiagnosis.reason }}</text></view>
       <view class="ai-box"><text class="ai-title">处置建议</text><text class="ai-text">{{ alert.aiDiagnosis.suggestion }}</text></view>
-      <view class="ai-box"><text class="ai-title">历史相似案例</text><text v-for="(item, index) in alert.aiDiagnosis.similarCases" :key="'case' + index" class="ai-list">• {{ item }}</text></view>
-      <view class="ai-box"><text class="ai-title">处置 SOP</text><text v-for="(item, index) in alert.aiDiagnosis.sop" :key="'sop' + index" class="ai-list">{{ index + 1 }}. {{ item }}</text></view>
+      <view class="ai-box"><text class="ai-title">历史相似案例</text><text v-for="(item, index) in alert.aiDiagnosis.similarCases" :key="index" class="ai-list">• {{ item }}</text></view>
+      <view class="ai-box"><text class="ai-title">处置 SOP</text><text v-for="(item, index) in alert.aiDiagnosis.sop" :key="index" class="ai-list">{{ index + 1 }}. {{ item }}</text></view>
     </view>
 
     <view class="detail-card">
@@ -102,7 +102,7 @@ export default {
     };
   },
   onLoad(options) {
-    this.alertId = options?.id || null;
+    this.alertId = options && options.id ? options.id : null;
     this.loadAlertDetail();
   },
   computed: {

@@ -1,4 +1,35 @@
 <script>
+import { getAuthToken } from './utils/api';
+import { createUniShim } from './uni-shim';
+
+// 创建一个简单的路由对象，用于 uni-shim
+const router = {
+  push: (url) => {
+    console.log('Router push:', url);
+    // 这里可以实现简单的路由跳转逻辑
+  },
+  replace: (url) => {
+    console.log('Router replace:', url);
+    // 这里可以实现简单的路由替换逻辑
+  },
+  currentRoute: {
+    value: {
+      path: '/',
+      query: {}
+    }
+  }
+};
+
+// 设置全局 uni 对象
+if (typeof window !== 'undefined' && !window.uni) {
+  window.uni = createUniShim(router);
+}
+
+// 确保 getCurrentPages 函数在全局可用
+if (typeof window !== 'undefined' && !window.getCurrentPages) {
+  window.getCurrentPages = window.uni.getCurrentPages;
+}
+
 export default {
   name: 'App',
   onLaunch() {
@@ -6,6 +37,12 @@ export default {
   },
   onShow() {
     console.log('App Show');
+    const token = getAuthToken();
+    const currentPages = typeof getCurrentPages === 'function' ? getCurrentPages() : [];
+    const currentRoute = currentPages.length ? `/${currentPages[currentPages.length - 1].route}` : '';
+    if (token && currentRoute === '/pages/auth/login') {
+      uni.switchTab({ url: '/pages/index/index' });
+    }
   },
   onHide() {
     console.log('App Hide');

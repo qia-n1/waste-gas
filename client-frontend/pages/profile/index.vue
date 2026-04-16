@@ -18,6 +18,11 @@
         <view class="summary-box"><text class="summary-label">我的处置</text><text class="summary-value">{{ disposals.length }}</text></view>
         <view class="summary-box"><text class="summary-label">巡检记录</text><text class="summary-value">{{ inspections.length }}</text></view>
       </view>
+      <view class="summary-actions">
+        <view class="action-pill" @click="navigateTo('/pages/records/index')">处置记录</view>
+        <view class="action-pill" @click="navigateTo('/pages/area/index')">我的区域</view>
+        <view class="action-pill" @click="navigateTo('/pages/ai/chat')">AI 助手</view>
+      </view>
     </view>
 
     <view class="profile-card">
@@ -94,6 +99,9 @@ export default {
         uni.showToast({ title: '导出失败', icon: 'none' });
       }
     },
+    navigateTo(url) {
+      uni.navigateTo({ url });
+    },
     logout() {
       uni.showModal({ title: '退出登录', content: '确定要退出登录吗？', success: (res) => {
         if (res.confirm) {
@@ -124,6 +132,8 @@ export default {
 .action-link { color:#7b61ff; font-size:20rpx; font-weight:700; }
 .summary-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:14rpx; }
 .summary-box,.info-item,.record-item { padding:20rpx; border-radius:22rpx; background:#faf8ff; }
+.summary-actions { display:flex; gap:12rpx; margin-top:14rpx; }
+.action-pill { flex:1; text-align:center; padding:16rpx 12rpx; border-radius:18rpx; background:#efeaff; color:#7b61ff; font-size:20rpx; font-weight:700; }
 .summary-label,.info-label,.record-meta { display:block; font-size:18rpx; color:#9388ae; }
 .summary-value,.info-value,.record-title { display:block; margin-top:10rpx; font-size:23rpx; color:#2d2454; font-weight:700; }
 .info-list,.record-list { display:flex; flex-direction:column; gap:14rpx; }

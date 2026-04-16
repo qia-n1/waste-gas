@@ -43,8 +43,8 @@
 
     <view class="alerts-container">
       <view 
-        v-for="(alert, index) in filteredAlerts" 
-        :key="'alert' + index"
+        v-for="alert in filteredAlerts" 
+        :key="alert.id"
         class="alert-card"
         @click="navigateToDetail(alert.id)"
       >

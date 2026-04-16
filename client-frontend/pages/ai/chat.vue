@@ -11,7 +11,7 @@
 
     <view class="chat-card">
       <scroll-view scroll-y class="chat-list">
-        <view v-for="(item, index) in history" :key="'chat' + index" class="chat-item" :class="item.role">
+        <view v-for="(item, index) in history" :key="index" class="chat-item" :class="item.role">
           <text class="chat-role">{{ item.role === 'assistant' ? 'AI' : '我' }}</text>
           <text class="chat-content">{{ item.content }}</text>
           <text class="chat-time">{{ item.createdAt || '刚刚' }}</text>

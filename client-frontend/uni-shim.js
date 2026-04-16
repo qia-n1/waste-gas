@@ -113,5 +113,16 @@ export function createUniShim(router) {
       const queryString = fullPath.split('?')[1] || ''
       return parseQuery(queryString)
     },
+
+    getCurrentPages() {
+      const currentRoute = router.currentRoute.value
+      if (!currentRoute) return []
+      return [{
+        route: currentRoute.path.replace(/^\//, ''),
+        __route__: currentRoute.path,
+        options: currentRoute.query || {},
+        query: currentRoute.query || {}
+      }]
+    },
   }
 }
