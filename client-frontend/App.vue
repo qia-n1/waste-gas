@@ -1,20 +1,63 @@
 <template>
-  <view class="app-container">
+  <div class="app-shell" :class="{ 'with-tabbar': showTabbar }">
     <router-view />
-  </view>
+
+    <nav v-if="showTabbar" class="app-tabbar">
+      <button
+        v-for="item in tabItems"
+        :key="item.path"
+        type="button"
+        class="tab-item"
+        :class="{ active: isActive(item.path) }"
+        @click="go(item.path)"
+      >
+        <span class="tab-text">{{ item.label }}</span>
+      </button>
+    </nav>
+  </div>
 </template>
 
 <script>
+import { computed } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+
 export default {
   name: 'App',
-  onLaunch() {
-    console.log('App Launch');
-  },
-  onShow() {
-    console.log('App Show');
-  },
-  onHide() {
-    console.log('App Hide');
+  setup() {
+    const route = useRoute();
+    const router = useRouter();
+
+    const tabItems = [
+      { path: '/pages/index/index', label: '首页' },
+      { path: '/pages/monitor/realtime', label: '监控' },
+      { path: '/pages/alerts/list', label: '告警' },
+      { path: '/pages/profile/index', label: '我的' },
+    ];
+
+    const hidePaths = new Set(['/auth/login']);
+
+    const showTabbar = computed(() => {
+      if (hidePaths.has(route.path)) {
+        return false;
+      }
+      return Boolean(localStorage.getItem('authToken'));
+    });
+
+    const go = (path) => {
+      if (route.path === path) {
+        return;
+      }
+      router.replace(path);
+    };
+
+    const isActive = (path) => route.path === path;
+
+    return {
+      tabItems,
+      showTabbar,
+      go,
+      isActive,
+    };
   }
 };
 </script>
@@ -27,104 +70,54 @@ export default {
   box-sizing: border-box;
 }
 
-.app-container {
+html,
+body,
+#app {
   min-height: 100vh;
-  background-color: #f5f5f5;
 }
 
-/* 通用样式 */
-.section-title {
-  font-size: 24rpx;
-  font-weight: bold;
-  margin-bottom: 16rpx;
-  color: #333;
+.app-shell {
+  min-height: 100vh;
 }
 
-/* 按钮样式 */
-.btn-primary {
-  background-color: #4CAF50;
-  color: white;
+.app-shell.with-tabbar {
+  padding-bottom: calc(64px + env(safe-area-inset-bottom));
+}
+
+.app-tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 999;
+  height: calc(64px + env(safe-area-inset-bottom));
+  padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.95);
+  border-top: 1px solid #ececf3;
+  backdrop-filter: blur(10px);
+}
+
+.tab-item {
   border: none;
-  border-radius: 12rpx;
-  padding: 16rpx;
-  font-size: 18rpx;
-  font-weight: 500;
-}
-
-.btn-secondary {
-  background-color: white;
-  color: #4CAF50;
-  border: 1rpx solid #4CAF50;
-  border-radius: 12rpx;
-  padding: 16rpx;
-  font-size: 18rpx;
-  font-weight: 500;
-}
-
-/* 卡片样式 */
-.card {
-  background-color: white;
-  border-radius: 16rpx;
-  padding: 20rpx;
-  margin-bottom: 20rpx;
-  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.05);
-}
-
-/* 列表项样式 */
-.list-item {
+  border-radius: 12px;
+  background: transparent;
+  color: #8a8fa5;
+  font-size: 15px;
+  font-weight: 600;
   display: flex;
-  align-items: center;
-  padding: 20rpx;
-  border-bottom: 1rpx solid #f0f0f0;
-}
-
-.list-item:last-child {
-  border-bottom: none;
-}
-
-/* 状态标签 */
-.status-tag {
-  padding: 4rpx 12rpx;
-  border-radius: 12rpx;
-  font-size: 14rpx;
-}
-
-.status-tag.normal {
-  background-color: #e8f5e8;
-  color: #4CAF50;
-}
-
-.status-tag.warning {
-  background-color: #fff3cd;
-  color: #ff9800;
-}
-
-.status-tag.error {
-  background-color: #f8d7da;
-  color: #ff4444;
-}
-
-/* 加载动画 */
-.loading {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 40rpx;
-}
-
-/* 空状态 */
-.empty {
-  display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 60rpx 20rpx;
-  text-align: center;
 }
 
-.empty-text {
-  font-size: 18rpx;
-  color: #999;
-  margin-top: 16rpx;
+.tab-item.active {
+  color: #4f46e5;
+  background: #eef2ff;
+}
+
+.tab-text {
+  line-height: 1;
 }
 </style>

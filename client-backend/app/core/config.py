@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     jwt_algorithm: str = 'HS256'
     jwt_expire_minutes: int = 60
 
-    postgres_dsn: str = 'postgresql+asyncpg://postgres:postgres@localhost:5432/vocs'
+    postgres_dsn: str = 'sqlite+aiosqlite:///./vocs.db'
     redis_url: str = 'redis://localhost:6379/0'
 
     rag_enabled: bool = False

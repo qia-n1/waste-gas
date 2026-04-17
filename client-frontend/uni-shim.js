@@ -54,6 +54,16 @@ function createRequestImpl() {
   }
 }
 
+function goWithRouter(router, url, replace = false) {
+  const normalizedUrl = normalizeUniUrl(url)
+  if (replace) {
+    router.replace(normalizedUrl)
+    return
+  }
+
+  router.push(normalizedUrl)
+}
+
 export function createUniShim(router) {
   return {
     getStorageSync(key) {
@@ -80,11 +90,19 @@ export function createUniShim(router) {
     request: createRequestImpl(),
 
     navigateTo({ url }) {
-      router.push(normalizeUniUrl(url))
+      goWithRouter(router, url, false)
     },
 
     redirectTo({ url }) {
-      router.replace(normalizeUniUrl(url))
+      goWithRouter(router, url, true)
+    },
+
+    switchTab({ url }) {
+      goWithRouter(router, url, true)
+    },
+
+    reLaunch({ url }) {
+      goWithRouter(router, url, true)
     },
 
     showToast({ title = '', icon = 'none' }) {
@@ -112,6 +130,17 @@ export function createUniShim(router) {
     __parseRouteQuery(fullPath = '') {
       const queryString = fullPath.split('?')[1] || ''
       return parseQuery(queryString)
+    },
+
+    getCurrentPages() {
+      const currentRoute = router.currentRoute.value
+      if (!currentRoute) return []
+      return [{
+        route: currentRoute.path.replace(/^\//, ''),
+        __route__: currentRoute.path,
+        options: currentRoute.query || {},
+        query: currentRoute.query || {}
+      }]
     },
   }
 }

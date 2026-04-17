@@ -89,3 +89,79 @@ class AlertRecord(Base):
     operator: Mapped[str] = mapped_column(String(64), nullable=False)
 
     alert: Mapped[Alert] = relationship('Alert', back_populates='records')
+
+
+class AreaZone(Base):
+    __tablename__ = 'wg_area_zones'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    manager_username: Mapped[str] = mapped_column(String(64), nullable=False)
+    device_count: Mapped[int] = mapped_column(Integer, default=0)
+    online_rate: Mapped[float] = mapped_column(Float, default=0)
+    alert_count: Mapped[int] = mapped_column(Integer, default=0)
+    avg_vocs: Mapped[float] = mapped_column(Float, default=0)
+
+
+class AreaSourcePoint(Base):
+    __tablename__ = 'wg_area_source_points'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    area_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    x: Mapped[float] = mapped_column(Float, nullable=False)
+    y: Mapped[float] = mapped_column(Float, nullable=False)
+    concentration: Mapped[float] = mapped_column(Float, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    level: Mapped[str] = mapped_column(String(16), nullable=False)
+    trend: Mapped[str] = mapped_column(String(16), nullable=False)
+    device_id: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class DisposalRecord(Base):
+    __tablename__ = 'wg_disposal_records'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    alert_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    username: Mapped[str] = mapped_column(String(64), nullable=False)
+    result: Mapped[str] = mapped_column(String(64), nullable=False)
+    notes: Mapped[str] = mapped_column(Text, default='')
+    photo_url: Mapped[str] = mapped_column(String(255), default='')
+    status: Mapped[str] = mapped_column(String(32), default='已提交')
+    action_type: Mapped[str] = mapped_column(String(32), default='处置闭环')
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class NotificationMessage(Base):
+    __tablename__ = 'wg_notification_messages'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String(64), nullable=False)
+    title: Mapped[str] = mapped_column(String(128), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str] = mapped_column(String(32), nullable=False)
+    level: Mapped[str] = mapped_column(String(16), nullable=False)
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    alert_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class AiConversation(Base):
+    __tablename__ = 'wg_ai_conversations'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String(64), nullable=False)
+    session_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class InspectionRecord(Base):
+    __tablename__ = 'wg_inspection_records'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String(64), nullable=False)
+    area_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    summary: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)

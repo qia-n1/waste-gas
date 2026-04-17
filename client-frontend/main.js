@@ -1,36 +1,45 @@
-import { createApp } from 'vue'
-import App from './App.vue'
-import router from './router'
-import { createUniShim } from './uni-shim'
+import { createApp } from 'vue';
+import App from './App.vue';
+import router from './router';
+import { createUniShim } from './uni-shim';
 
-const app = createApp(App)
+const uniShim = createUniShim(router);
 
-const uniShim = createUniShim(router)
-globalThis.uni = uniShim
+if (typeof window !== 'undefined') {
+	window.uni = uniShim;
+	window.getCurrentPages = uniShim.getCurrentPages;
+}
 
+if (typeof globalThis !== 'undefined') {
+	globalThis.uni = uniShim;
+	globalThis.getCurrentPages = uniShim.getCurrentPages;
+}
+
+const app = createApp(App);
+
+// Bridge common uni-app page lifecycle hooks in Vue3 Web runtime.
 app.mixin({
 	mounted() {
-		const maybeOnLoad = this.$options.onLoad
-		if (typeof maybeOnLoad === 'function' && !this.__uniOnLoadCalled) {
-			const query = uniShim.__parseRouteQuery(this.$route?.fullPath || '')
-			maybeOnLoad.call(this, query)
-			this.__uniOnLoadCalled = true
+		const route = this?.$route;
+		const options = route?.query || {};
+
+		if (typeof this.$options?.onLoad === 'function') {
+			this.$options.onLoad.call(this, options);
 		}
 
-		const maybeOnShow = this.$options.onShow
-		if (typeof maybeOnShow === 'function') {
-			maybeOnShow.call(this)
+		if (typeof this.$options?.onShow === 'function') {
+			this.$options.onShow.call(this);
+		}
+
+		if (typeof this.$options?.onReady === 'function') {
+			this.$options.onReady.call(this);
 		}
 	},
-	watch: {
-		$route() {
-			const maybeOnShow = this.$options.onShow
-			if (typeof maybeOnShow === 'function') {
-				maybeOnShow.call(this)
-			}
-		},
+	unmounted() {
+		if (typeof this.$options?.onHide === 'function') {
+			this.$options.onHide.call(this);
+		}
 	},
-})
+});
 
-app.use(router)
-app.mount('#app')
+app.use(router).mount('#app');

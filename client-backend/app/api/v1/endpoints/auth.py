@@ -29,12 +29,12 @@ class UserResponse(BaseModel):
 
 
 class RegisterRequest(BaseModel):
-    username: str = Field(min_length=1, max_length=64)
-    password: str = Field(min_length=6, max_length=128)
-    name: str = Field(min_length=1, max_length=64)
-    email: str = Field(min_length=5, max_length=128, pattern=r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
-    phone: str = Field(min_length=6, max_length=32)
-    department: str = Field(min_length=1, max_length=64)
+    username: str = ''
+    password: str = ''
+    name: str = ''
+    email: str = ''
+    phone: str = ''
+    department: str = ''
     role: str = '普通用户'
 
 
@@ -92,18 +92,39 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)) -> di
 
 @router.post('/register')
 async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db)) -> dict:
-    profile = await get_user_by_username(db, request.username)
+    username = (request.username or '').strip()
+    password = (request.password or '').strip()
+    name = (request.name or '').strip()
+    email = (request.email or '').strip()
+    phone = (request.phone or '').strip()
+    department = (request.department or '').strip()
+    role = (request.role or '普通用户').strip() or '普通用户'
+
+    if len(username) < 1:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='用户名不能为空')
+    if len(password) < 6:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='密码至少 6 位')
+    if len(name) < 1:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='姓名不能为空')
+    if '@' not in email:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='邮箱格式不正确')
+    if len(phone) < 6:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='手机号格式不正确')
+    if len(department) < 1:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='部门不能为空')
+
+    profile = await get_user_by_username(db, username)
     if profile is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='用户名已存在')
 
     profile = UserProfile(
-        username=request.username,
-        password_hash=hash_password(request.password),
-        role=request.role,
-        name=request.name,
-        email=request.email,
-        phone=request.phone,
-        department=request.department,
+        username=username,
+        password_hash=hash_password(password),
+        role=role,
+        name=name,
+        email=email,
+        phone=phone,
+        department=department,
         join_date=date.today(),
     )
     db.add(profile)

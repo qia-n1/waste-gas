@@ -7,6 +7,12 @@
       }
     },
     {
+      "path": "pages/auth/register",
+      "style": {
+        "navigationBarTitleText": "注册"
+      }
+    },
+    {
       "path": "pages/index/index",
       "style": {
         "navigationBarTitleText": "首页"
@@ -33,31 +39,19 @@
     {
       "path": "pages/ai/chat",
       "style": {
-        "navigationBarTitleText": "AI助手"
+        "navigationBarTitleText": "AI 对话"
       }
     },
     {
-      "path": "pages/area/index",
+      "path": "pages/inspection/records",
       "style": {
-        "navigationBarTitleText": "我的区域"
-      }
-    },
-    {
-      "path": "pages/records/index",
-      "style": {
-        "navigationBarTitleText": "处置记录"
+        "navigationBarTitleText": "巡检记录"
       }
     },
     {
       "path": "pages/profile/index",
       "style": {
         "navigationBarTitleText": "个人中心"
-      }
-    },
-    {
-      "path": "pages/profile/edit",
-      "style": {
-        "navigationBarTitleText": "编辑个人信息"
       }
     },
     {
@@ -76,7 +70,7 @@
   "tabBar": {
     "color": "#9CA3AF",
     "selectedColor": "#7B61FF",
-    "backgroundColor": "#fff",
+    "backgroundColor": "#ffffff",
     "borderStyle": "white",
     "list": [
       {
