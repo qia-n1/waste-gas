@@ -90,7 +90,7 @@ export default {
         this.loading = false;
       }
     },
-    editProfile() { uni.showToast({ title: '编辑个人信息', duration: 1000 }); },
+    editProfile() { uni.navigateTo({ url: '/pages/profile/edit' }); },
     async exportDisposals() {
       try {
         const res = await request({ url: '/alerts/exports/disposals' });

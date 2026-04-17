@@ -1,6 +1,19 @@
-const DEFAULT_BASE_URL = 'http://localhost:8002/api/v1';
+const DEFAULT_BASE_URL = 'http://localhost:18002/api/v1';
 const AUTH_TOKEN_KEY = 'authToken';
 const AUTH_USER_KEY = 'authUser';
+
+function normalizeBaseUrl(baseUrl) {
+  const value = String(baseUrl || '').trim();
+  if (!value) {
+    return DEFAULT_BASE_URL;
+  }
+
+  return value
+    .replace('http://localhost:8002/api/v1', DEFAULT_BASE_URL)
+    .replace('http://127.0.0.1:8002/api/v1', 'http://127.0.0.1:18002/api/v1')
+    .replace('http://localhost:8002', 'http://localhost:18002')
+    .replace('http://127.0.0.1:8002', 'http://127.0.0.1:18002');
+}
 
 function getStorageValue(key) {
   try {
@@ -56,7 +69,7 @@ export function getBaseUrl() {
   try {
     if (typeof uni !== 'undefined' && typeof uni.getStorageSync === 'function') {
       const custom = uni.getStorageSync('apiBaseUrl');
-      return custom || DEFAULT_BASE_URL;
+      return normalizeBaseUrl(custom || DEFAULT_BASE_URL);
     }
   } catch {
     // Fall back to default below
@@ -67,7 +80,7 @@ export function getBaseUrl() {
 export function setBaseUrl(baseUrl) {
   try {
     if (typeof uni !== 'undefined' && typeof uni.setStorageSync === 'function') {
-      uni.setStorageSync('apiBaseUrl', baseUrl);
+      uni.setStorageSync('apiBaseUrl', normalizeBaseUrl(baseUrl));
     }
   } catch {
     // Ignore storage failures in constrained environments

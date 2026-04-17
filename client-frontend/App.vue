@@ -1,164 +1,123 @@
+<template>
+  <div class="app-shell" :class="{ 'with-tabbar': showTabbar }">
+    <router-view />
+
+    <nav v-if="showTabbar" class="app-tabbar">
+      <button
+        v-for="item in tabItems"
+        :key="item.path"
+        type="button"
+        class="tab-item"
+        :class="{ active: isActive(item.path) }"
+        @click="go(item.path)"
+      >
+        <span class="tab-text">{{ item.label }}</span>
+      </button>
+    </nav>
+  </div>
+</template>
+
 <script>
-import { getAuthToken } from './utils/api';
-import { createUniShim } from './uni-shim';
-
-// 创建一个简单的路由对象，用于 uni-shim
-const router = {
-  push: (url) => {
-    console.log('Router push:', url);
-    // 这里可以实现简单的路由跳转逻辑
-  },
-  replace: (url) => {
-    console.log('Router replace:', url);
-    // 这里可以实现简单的路由替换逻辑
-  },
-  currentRoute: {
-    value: {
-      path: '/',
-      query: {}
-    }
-  }
-};
-
-// 设置全局 uni 对象
-if (typeof window !== 'undefined' && !window.uni) {
-  window.uni = createUniShim(router);
-}
-
-// 确保 getCurrentPages 函数在全局可用
-if (typeof window !== 'undefined' && !window.getCurrentPages) {
-  window.getCurrentPages = window.uni.getCurrentPages;
-}
+import { computed } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 
 export default {
   name: 'App',
-  onLaunch() {
-    console.log('App Launch');
-  },
-  onShow() {
-    console.log('App Show');
-    const token = getAuthToken();
-    const currentPages = typeof getCurrentPages === 'function' ? getCurrentPages() : [];
-    const currentRoute = currentPages.length ? `/${currentPages[currentPages.length - 1].route}` : '';
-    if (token && currentRoute === '/pages/auth/login') {
-      uni.switchTab({ url: '/pages/index/index' });
-    }
-  },
-  onHide() {
-    console.log('App Hide');
+  setup() {
+    const route = useRoute();
+    const router = useRouter();
+
+    const tabItems = [
+      { path: '/pages/index/index', label: '首页' },
+      { path: '/pages/monitor/realtime', label: '监控' },
+      { path: '/pages/alerts/list', label: '告警' },
+      { path: '/pages/profile/index', label: '我的' },
+    ];
+
+    const hidePaths = new Set(['/auth/login']);
+
+    const showTabbar = computed(() => {
+      if (hidePaths.has(route.path)) {
+        return false;
+      }
+      return Boolean(localStorage.getItem('authToken'));
+    });
+
+    const go = (path) => {
+      if (route.path === path) {
+        return;
+      }
+      router.replace(path);
+    };
+
+    const isActive = (path) => route.path === path;
+
+    return {
+      tabItems,
+      showTabbar,
+      go,
+      isActive,
+    };
   }
 };
 </script>
 
 <style>
-:root {
-  --primary: #7B61FF;
-  --primary-light: #A78BFA;
-  --bg: #ffffff;
-  --bg-soft: #f8f5ff;
-  --text-main: #1f2937;
-  --text-second: #6b7280;
-}
-
+/* 全局样式 */
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
 }
 
-/* 通用样式 */
-.section-title {
-  font-size: 31rpx;
-  font-weight: bold;
-  margin-bottom: 16rpx;
-  color: var(--text-main);
+html,
+body,
+#app {
+  min-height: 100vh;
 }
 
-/* 按钮样式 */
-.btn-primary {
-  background-color: var(--primary);
-  color: white;
+.app-shell {
+  min-height: 100vh;
+}
+
+.app-shell.with-tabbar {
+  padding-bottom: calc(64px + env(safe-area-inset-bottom));
+}
+
+.app-tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 999;
+  height: calc(64px + env(safe-area-inset-bottom));
+  padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.95);
+  border-top: 1px solid #ececf3;
+  backdrop-filter: blur(10px);
+}
+
+.tab-item {
   border: none;
-  border-radius: 12rpx;
-  padding: 16rpx;
-  font-size: 23rpx;
-  font-weight: 500;
-}
-
-.btn-secondary {
-  background-color: white;
-  color: var(--primary);
-  border: 1rpx solid var(--primary);
-  border-radius: 12rpx;
-  padding: 16rpx;
-  font-size: 23rpx;
-  font-weight: 500;
-}
-
-/* 卡片样式 */
-.card {
-  background-color: white;
-  border-radius: 16rpx;
-  padding: 20rpx;
-  margin-bottom: 20rpx;
-  box-shadow: 0 8rpx 24rpx rgba(123, 97, 255, 0.08);
-}
-
-/* 列表项样式 */
-.list-item {
+  border-radius: 12px;
+  background: transparent;
+  color: #8a8fa5;
+  font-size: 15px;
+  font-weight: 600;
   display: flex;
-  align-items: center;
-  padding: 20rpx;
-  border-bottom: 1rpx solid #f0f0f0;
-}
-
-.list-item:last-child {
-  border-bottom: none;
-}
-
-/* 状态标签 */
-.status-tag {
-  padding: 4rpx 12rpx;
-  border-radius: 12rpx;
-  font-size: 18rpx;
-}
-
-.status-tag.normal {
-  background-color: #f3f0ff;
-  color: var(--primary);
-}
-
-.status-tag.warning {
-  background-color: #fff3cd;
-  color: #ff9800;
-}
-
-.status-tag.error {
-  background-color: #f8d7da;
-  color: #ff4444;
-}
-
-/* 加载动画 */
-.loading {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 40rpx;
-}
-
-/* 空状态 */
-.empty {
-  display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 60rpx 20rpx;
-  text-align: center;
 }
 
-.empty-text {
-  font-size: 23rpx;
-  color: #999;
-  margin-top: 16rpx;
+.tab-item.active {
+  color: #4f46e5;
+  background: #eef2ff;
+}
+
+.tab-text {
+  line-height: 1;
 }
 </style>

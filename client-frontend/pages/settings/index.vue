@@ -105,7 +105,7 @@ export default {
       uni.showToast({ title: '通知设置已更新', duration: 1000 });
     },
     changeApiBaseUrl() {
-      uni.showModal({ title: '设置后端地址', editable: true, placeholderText: '例如 http://127.0.0.1:8002/api/v1', content: this.apiBaseUrl, success: (res) => {
+      uni.showModal({ title: '设置后端地址', editable: true, placeholderText: '例如 http://127.0.0.1:18002/api/v1', content: this.apiBaseUrl, success: (res) => {
         if (res.confirm && res.content) {
           const value = res.content.trim().replace(/\/$/, '');
           setBaseUrl(value);

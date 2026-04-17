@@ -16,6 +16,12 @@ class PasswordChangeRequest(BaseModel):
     new_password: str = Field(min_length=6, max_length=128)
 
 
+class ProfileUpdateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    email: str = Field(min_length=3, max_length=128)
+    phone: str = Field(min_length=6, max_length=32)
+
+
 async def _get_profile(db: AsyncSession, username: str) -> UserProfile:
     profile = await db.scalar(select(UserProfile).where(UserProfile.username == username).limit(1))
     if profile is None:
@@ -52,6 +58,30 @@ async def change_password(
     profile.password_hash = hash_password(payload.new_password)
     await db.commit()
     return {'code': 200, 'message': '密码修改成功'}
+
+
+@router.post('/update')
+async def update_profile(
+    payload: ProfileUpdateRequest,
+    username: str = Depends(get_current_username),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    profile = await _get_profile(db, username)
+    profile.name = payload.name.strip()
+    profile.email = payload.email.strip()
+    profile.phone = payload.phone.strip()
+    await db.commit()
+    await db.refresh(profile)
+
+    areas = (await db.scalars(select(AreaZone).where(AreaZone.manager_username == username))).all()
+    return {
+        'code': 200,
+        'message': '个人信息更新成功',
+        'data': {
+            **serialize_user(profile).model_dump(),
+            'areas': [item.name for item in areas],
+        },
+    }
 
 
 @router.get('/notifications')

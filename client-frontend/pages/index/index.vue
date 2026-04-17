@@ -24,16 +24,27 @@
           <view class="map-action wide" @click="focusNearestAlert">最近告警</view>
         </view>
       </view>
-      <movable-area class="map-area">
-        <movable-view class="map-canvas" direction="all" :scale="true" :scale-min="0.8" :scale-max="2.2" :scale-value="mapScale">
+      <view class="map-area">
+        <view class="map-canvas" :style="{ transform: `scale(${mapScale})` }">
           <view class="map-grid"></view>
+          <view
+            v-for="area in mapAreas"
+            :key="`zone-${area.id}`"
+            class="map-zone"
+            :class="area.level"
+            :style="{ left: area.x + '%', top: area.y + '%', width: area.w + '%', height: area.h + '%' }"
+          >
+            <text class="zone-title">{{ area.name }}</text>
+            <text class="zone-meta">设备 {{ area.deviceCount }} · 告警 {{ area.alertCount }}</text>
+          </view>
           <view v-for="point in mapPoints" :key="point.id" class="map-point" :class="point.level" :style="{ left: point.x + '%', top: point.y + '%' }" @click="selectPoint(point)">
             <text class="map-point-dot"></text>
             <text class="map-point-name">{{ point.name }}</text>
           </view>
-        </movable-view>
-      </movable-area>
+        </view>
+      </view>
       <view class="map-footer">
+        <view class="stat-chip">负责区域 {{ mapAreas.length }}</view>
         <view class="stat-chip">在线点位 {{ mapPoints.length }}</view>
         <view class="stat-chip warning">高等级 {{ highAlertCount }}</view>
       </view>
@@ -96,6 +107,7 @@ export default {
   data() {
     return {
       realTimeData: { vocs: 0, temperature: 0, humidity: 0, timestamp: '' },
+      mapAreas: [],
       mapPoints: [],
       selectedPoint: null,
       mapScale: 1,
@@ -124,6 +136,7 @@ export default {
           console.log('realTimeData set:', this.realTimeData);
         }
         if (mapRes?.code === 200 && mapRes.data) {
+          this.mapAreas = mapRes.data.areas || [];
           this.mapPoints = mapRes.data.points || [];
           this.nearestAlertId = mapRes.data.nearestAlertId;
           this.selectedPoint = this.mapPoints.find(item => item.id === this.nearestAlertId) || this.mapPoints[0] || null;
@@ -185,9 +198,15 @@ export default {
 .map-actions { display:flex; gap:10rpx; }
 .map-action { min-width:56rpx; height:56rpx; border-radius:16rpx; background:#f3eeff; display:flex; align-items:center; justify-content:center; color:#7b61ff; font-size:22rpx; font-weight:700; }
 .map-action.wide { min-width:128rpx; padding:0 12rpx; }
-.map-area { width:100%; height:420rpx; border-radius:24rpx; overflow:hidden; background:linear-gradient(180deg,#faf7ff 0%,#f1e9ff 100%); }
-.map-canvas { width:100%; height:100%; position:relative; }
+.map-area { width:100%; height:420rpx; border-radius:24rpx; overflow:hidden; background:linear-gradient(180deg,#faf7ff 0%,#f1e9ff 100%); position:relative; }
+.map-canvas { width:100%; height:100%; position:relative; transform-origin:center center; transition:transform .2s ease; }
 .map-grid { position:absolute; inset:0; background-image: linear-gradient(rgba(123,97,255,.08) 1px, transparent 1px), linear-gradient(90deg, rgba(123,97,255,.08) 1px, transparent 1px); background-size:44rpx 44rpx; }
+.map-zone { position:absolute; border-radius:18rpx; padding:10rpx 12rpx; border:2rpx solid rgba(255,255,255,.75); box-shadow:0 8rpx 18rpx rgba(61,43,123,.12); display:flex; flex-direction:column; justify-content:flex-start; overflow:hidden; }
+.map-zone.low { background:linear-gradient(135deg, rgba(52,199,89,.18) 0%, rgba(52,199,89,.10) 100%); }
+.map-zone.medium { background:linear-gradient(135deg, rgba(255,149,0,.20) 0%, rgba(255,149,0,.10) 100%); }
+.map-zone.high { background:linear-gradient(135deg, rgba(255,77,103,.20) 0%, rgba(255,77,103,.10) 100%); }
+.zone-title { font-size:16rpx; font-weight:700; color:#3f345f; }
+.zone-meta { margin-top:4rpx; font-size:14rpx; color:#6f638f; }
 .map-point { position:absolute; transform:translate(-50%,-50%); display:flex; flex-direction:column; align-items:center; }
 .map-point-dot { width:26rpx; height:26rpx; border-radius:50%; border:4rpx solid #fff; box-shadow:0 8rpx 16rpx rgba(0,0,0,.12); }
 .map-point.low .map-point-dot { background:#34c759; }
