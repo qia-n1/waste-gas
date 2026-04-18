@@ -27,6 +27,14 @@ class Settings:
             str(ROOT_DIR / "vocs_realtime_data" / "vocs_realtime_data.csv"),
         )
     )
+    # Global time granularity (minutes) for aggregation scheduler, default 15.
+    aggregation_granularity_minutes: int = int(os.getenv("AGGREGATION_GRANULARITY_MINUTES", "15"))
+    ingest_data_dir: Path = Path(
+        os.getenv(
+            "INGEST_DATA_DIR",
+            str(ROOT_DIR / "admin" / "backend" / "data_fusion"),
+        )
+    )
 
 
 settings = Settings()
