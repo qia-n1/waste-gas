@@ -29,6 +29,40 @@ services:
     networks:
       - vocs-network
 
+  postgres:
+    image: timescale/timescaledb:latest-pg15
+    container_name: vocs-postgres
+    profiles: ["infra"]
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=vocs
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - TZ=Asia/Shanghai
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - vocs-network
+
+  redis:
+    image: redis:7
+    container_name: vocs-redis
+    profiles: ["infra"]
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - vocs-network
+
 networks:
   vocs-network:
     driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
