@@ -108,7 +108,7 @@ export default {
         if (res.confirm && res.content) {
           const value = res.content.trim().replace(/\/$/, '');
           setBaseUrl(value);
-          this.apiBaseUrl = value;
+          this.apiBaseUrl = getBaseUrl();
           uni.showToast({ title: '后端地址已保存', duration: 1000 });
         }
       }});

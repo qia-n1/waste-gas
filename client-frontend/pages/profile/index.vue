@@ -25,6 +25,7 @@
         <view class="action-pill" @click="navigateTo('/pages/records/index')">处置记录</view>
         <view class="action-pill" @click="navigateTo('/pages/area/index')">我的区域</view>
         <view class="action-pill" @click="navigateTo('/pages/ai/chat')">AI 助手</view>
+        <view class="action-pill" @click="navigateTo('/pages/settings/index')">设置</view>
       </view>
     </view>
 
@@ -216,7 +217,7 @@ export default {
 .summary-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:14rpx; }
 .monthly-grid { margin-bottom: 10rpx; }
 .summary-box,.info-item,.record-item { padding:20rpx; border-radius:22rpx; background:#faf8ff; }
-.summary-actions { display:flex; gap:12rpx; margin-top:14rpx; }
+.summary-actions { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:12rpx; margin-top:14rpx; }
 .action-pill { flex:1; text-align:center; padding:16rpx 12rpx; border-radius:18rpx; background:#efeaff; color:#7b61ff; font-size:20rpx; font-weight:700; }
 .action-pill:active { transform: scale(0.98); background:#e4dbff; }
 .summary-label,.info-label,.record-meta { display:block; font-size:18rpx; color:#9388ae; }

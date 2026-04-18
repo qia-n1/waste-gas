@@ -3,8 +3,11 @@
 </template>
 
 <script>
+import { resetBaseUrlToDefaultOnce } from './utils/api';
+
 export default {
   onShow() {
+    resetBaseUrlToDefaultOnce();
     this.ensureAuthRoute();
   },
   methods: {
