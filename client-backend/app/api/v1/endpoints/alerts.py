@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -10,6 +10,8 @@ from app.db.session import get_db
 from app.models.entities import Alert, AlertRecord, DisposalRecord
 
 router = APIRouter(prefix='/alerts', tags=['alerts'])
+
+TRACKING_HOURS_BEFORE_RESOLVE = 48
 
 
 class AlertHandleRequest(BaseModel):
@@ -69,6 +71,26 @@ async def get_alert_detail(alert_id: int, db: AsyncSession = Depends(get_db)) ->
         'sop': ['关闭异常支路', '检查风机电流与转速', '采样复测并记录处置结果'],
     }
 
+    ai_plan = {
+        'title': '现场处置方案（管理端下发）',
+        'summary': '按“先控制风险—再定位原因—复测确认—留痕闭环”的顺序执行，必要时升级班长/仪控/工艺联动。',
+        'steps': [
+            '确认告警点位、阈值与近 30 分钟趋势；对比相邻排口是否同步抬升',
+            '现场检查关键设备（风机/阀门/压差/温度/电流），记录异常参数与照片',
+            '若为压差升高：优先排查取压管堵塞/积水，再检查过滤器与转轮通道结焦/堵塞',
+            '执行临时控制措施：降负荷、切换备机/旁路、增加洗涤/喷淋强度（如适用）',
+            '处置后 10/30/60 分钟复测，趋势恢复稳定后提交处置并进入 48h 跟踪',
+        ],
+        'qaHint': '在本方案下可继续追问：例如“压差升高怎么判断是取压管问题？”“需要哪些现场证据？”',
+    }
+
+    now = datetime.now().replace(microsecond=0)
+    resolve_earliest: datetime | None = None
+    can_resolve = False
+    if alert.status == 'tracking' and alert.handled_at is not None:
+        resolve_earliest = alert.handled_at + timedelta(hours=TRACKING_HOURS_BEFORE_RESOLVE)
+        can_resolve = now >= resolve_earliest
+
     return {
         'code': 200,
         'data': {
@@ -78,6 +100,9 @@ async def get_alert_detail(alert_id: int, db: AsyncSession = Depends(get_db)) ->
             'description': alert.description,
             'level': alert.level,
             'status': alert.status,
+            'handledAt': alert.handled_at.strftime('%Y-%m-%d %H:%M') if alert.handled_at else None,
+            'resolveEarliestAt': resolve_earliest.strftime('%Y-%m-%d %H:%M') if resolve_earliest else None,
+            'canResolve': can_resolve,
             'deviceId': alert.device_id,
             'location': alert.location,
             'type': alert.alert_type,
@@ -88,6 +113,7 @@ async def get_alert_detail(alert_id: int, db: AsyncSession = Depends(get_db)) ->
                 {'label': '当前', 'value': round(alert.current_value, 2)},
             ],
             'aiDiagnosis': ai_diagnosis,
+            'aiPlan': ai_plan,
             'data': [
                 {
                     'label': alert.metric_label,
@@ -108,24 +134,59 @@ async def get_alert_detail(alert_id: int, db: AsyncSession = Depends(get_db)) ->
     }
 
 
-@router.post('/{alert_id}/resolve')
-async def resolve_alert(alert_id: int, db: AsyncSession = Depends(get_db)) -> dict:
+@router.post('/{alert_id}/accept')
+async def accept_alert(
+    alert_id: int,
+    username: str = Depends(get_current_username),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
     alert = await db.scalar(select(Alert).where(Alert.id == alert_id).limit(1))
     if alert is None:
         raise HTTPException(status_code=404, detail='告警不存在')
+    if alert.status != 'unresolved':
+        raise HTTPException(status_code=400, detail='仅待接单状态的告警可以接单')
+
+    now = datetime.now().replace(microsecond=0)
+    alert.status = 'accepted'
+    db.add(AlertRecord(alert_id=alert.id, time=now, content='现场已接单，开始处置', operator=username))
+    await db.commit()
+    return {'code': 200, 'message': '接单成功'}
+
+
+@router.post('/{alert_id}/resolve')
+async def resolve_alert(
+    alert_id: int,
+    username: str = Depends(get_current_username),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    alert = await db.scalar(select(Alert).where(Alert.id == alert_id).limit(1))
+    if alert is None:
+        raise HTTPException(status_code=404, detail='告警不存在')
+    if alert.status != 'tracking':
+        raise HTTPException(status_code=400, detail='仅「持续跟踪」中的告警可结案，请先提交处置并等待跟踪期满')
+    if alert.handled_at is None:
+        raise HTTPException(status_code=400, detail='缺少处置起算时间，无法结案')
+
+    now = datetime.now().replace(microsecond=0)
+    earliest = alert.handled_at + timedelta(hours=TRACKING_HOURS_BEFORE_RESOLVE)
+    if now < earliest:
+        raise HTTPException(
+            status_code=400,
+            detail=f'已处置告警须持续跟踪满 {TRACKING_HOURS_BEFORE_RESOLVE} 小时方可结案，最早 {earliest.strftime("%Y-%m-%d %H:%M")} 后可操作',
+        )
 
     alert.status = 'resolved'
-    alert.resolved_at = datetime.now().replace(microsecond=0)
+    alert.resolved_at = now
     db.add(
         AlertRecord(
             alert_id=alert.id,
-            time=alert.resolved_at,
-            content='告警已处理',
-            operator='当前用户',
+            time=now,
+            content='跟踪期满，告警已结案',
+            operator=username,
         )
     )
     await db.commit()
-    return {'code': 200, 'message': '告警已标记为已处理'}
+    return {'code': 200, 'message': '告警已结案'}
 
 
 @router.post('/{alert_id}/ignore')
@@ -133,9 +194,12 @@ async def ignore_alert(alert_id: int, db: AsyncSession = Depends(get_db)) -> dic
     alert = await db.scalar(select(Alert).where(Alert.id == alert_id).limit(1))
     if alert is None:
         raise HTTPException(status_code=404, detail='告警不存在')
+    if alert.status not in ('unresolved', 'accepted'):
+        raise HTTPException(status_code=400, detail='当前状态不可忽略')
 
     now = datetime.now().replace(microsecond=0)
     alert.status = 'resolved'
+    alert.resolved_at = now
     db.add(AlertRecord(alert_id=alert.id, time=now, content='告警已忽略', operator='当前用户'))
     await db.commit()
     return {'code': 200, 'message': '告警已忽略'}
@@ -146,9 +210,12 @@ async def misreport_alert(alert_id: int, db: AsyncSession = Depends(get_db)) -> 
     alert = await db.scalar(select(Alert).where(Alert.id == alert_id).limit(1))
     if alert is None:
         raise HTTPException(status_code=404, detail='告警不存在')
+    if alert.status not in ('unresolved', 'accepted'):
+        raise HTTPException(status_code=400, detail='当前状态不可标记误报')
 
     now = datetime.now().replace(microsecond=0)
     alert.status = 'resolved'
+    alert.resolved_at = now
     db.add(AlertRecord(alert_id=alert.id, time=now, content='已标记为误报', operator='当前用户'))
     await db.commit()
     return {'code': 200, 'message': '已标记为误报'}
@@ -164,15 +231,17 @@ async def handle_alert(
     alert = await db.scalar(select(Alert).where(Alert.id == alert_id).limit(1))
     if alert is None:
         raise HTTPException(status_code=404, detail='告警不存在')
+    if alert.status not in ('unresolved', 'accepted'):
+        raise HTTPException(status_code=400, detail='当前状态不可提交处置')
 
     now = datetime.now().replace(microsecond=0)
-    alert.status = 'resolved'
-    alert.resolved_at = now
+    alert.status = 'tracking'
+    alert.handled_at = now
     db.add(
         DisposalRecord(
             alert_id=alert.id,
             username=username,
-            result=payload.result,
+            result=payload.result[:64],
             notes=payload.notes,
             photo_url=payload.photoUrl,
             status='已提交',
@@ -180,16 +249,11 @@ async def handle_alert(
             created_at=now,
         )
     )
-    db.add(
-        AlertRecord(
-            alert_id=alert.id,
-            time=now,
-            content=f'提交处置结果：{payload.result}',
-            operator=username,
-        )
-    )
+    _tail = f'，进入 {TRACKING_HOURS_BEFORE_RESOLVE} 小时持续跟踪后方可结案'
+    _rec = f'提交处置结果：{payload.result}{_tail}'[:256]
+    db.add(AlertRecord(alert_id=alert.id, time=now, content=_rec, operator=username))
     await db.commit()
-    return {'code': 200, 'message': '处置记录已提交'}
+    return {'code': 200, 'message': f'处置已记录，需持续跟踪满 {TRACKING_HOURS_BEFORE_RESOLVE} 小时方可结案'}
 
 
 @router.get('/exports/disposals')

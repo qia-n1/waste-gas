@@ -1,6 +1,6 @@
 {
     "name" : "废气监测系统",
-    "appid" : "__UNI__E5AE9E5",
+    "appid" : "__UNI__18F2BC1",
     "description" : "废气监测系统 UniApp 客户端",
     "versionName" : "1.0.0",
     "versionCode" : "100",
@@ -26,11 +26,12 @@
             "port" : 8080,
             "proxy" : {
                 "/api" : {
-                    "target" : "http://localhost:18002",
+                    "target" : "http://localhost:18003",
                     "changeOrigin" : true,
                     "secure" : false
                 }
             }
         }
-    }
+    },
+    "vueVersion" : "3"
 }

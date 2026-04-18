@@ -1,18 +1,20 @@
 <template>
   <view class="edit-page">
     <view class="edit-hero">
-      <view>
-        <text class="hero-kicker">PROFILE</text>
-        <text class="page-title">编辑个人信息</text>
-        <text class="page-subtitle">固定信息只读，支持更新姓名、邮箱、手机号与密码。</text>
+      <view class="hero-text">
+        <text class="page-title">编辑资料</text>
+        <text class="page-subtitle">姓名、邮箱、电话与密码</text>
       </view>
       <view class="hero-chip">{{ userInfo.role || '普通用户' }}</view>
+    </view>
+    <view class="quick-nav">
+      <button class="secondary-btn ghost" @click="goBack">返回个人中心</button>
     </view>
 
     <view class="edit-card">
       <view class="card-head">
         <text class="section-title">固定信息（不可修改）</text>
-        <text class="section-desc">组织与账号属性由管理员维护</text>
+        <text class="section-desc">由管理员维护</text>
       </view>
       <view class="form-grid">
         <view class="form-item">
@@ -179,6 +181,9 @@ export default {
         uni.showToast({ title: error?.message || '密码修改失败', icon: 'none' });
       }
     },
+    goBack() {
+      uni.navigateBack({ delta: 1 });
+    },
   },
 };
 </script>
@@ -186,21 +191,34 @@ export default {
 <style>
 .edit-page { min-height: 100vh; padding: 24rpx 24rpx calc(36rpx + env(safe-area-inset-bottom)); background: linear-gradient(180deg, #f7f3ff 0%, #fcfbff 52%, #ffffff 100%); }
 .edit-hero,.edit-card { margin-bottom: 22rpx; padding: 26rpx; border-radius: 28rpx; background: #fff; box-shadow: 0 16rpx 36rpx rgba(49,30,109,.06); }
-.edit-hero { display:flex; justify-content:space-between; align-items:flex-end; gap:20rpx; }
-.hero-kicker { display:inline-block; font-size:18rpx; color:#7b61ff; letter-spacing:2rpx; font-weight:700; }
-.page-title { display:block; margin-top:14rpx; font-size:42rpx; font-weight:800; color:#2b2156; }
-.page-subtitle { display:block; margin-top:10rpx; font-size:21rpx; line-height:1.6; color:#8378a1; }
-.hero-chip { padding:12rpx 18rpx; border-radius:999rpx; background:#efe9ff; color:#7b61ff; font-size:21rpx; font-weight:700; }
+.quick-nav { margin-top: -6rpx; margin-bottom: 18rpx; }
+.edit-hero { display:flex; justify-content:space-between; align-items:flex-start; gap:20rpx; }
+.hero-text { flex:1; min-width:0; }
+.page-title { display:block; font-size:42rpx; font-weight:800; color:#2b2156; line-height:1.2; word-break:break-word; }
+.page-subtitle { display:block; margin-top:10rpx; font-size:22rpx; line-height:1.45; color:#8378a1; word-break:break-word; }
+.hero-chip { flex-shrink:0; padding:12rpx 18rpx; border-radius:999rpx; background:#efe9ff; color:#7b61ff; font-size:21rpx; font-weight:700; }
 .card-head { margin-bottom:18rpx; }
 .section-title { display:block; font-size:31rpx; font-weight:800; color:#2d2454; }
 .section-desc { display:block; margin-top:8rpx; font-size:20rpx; color:#8c81a7; }
 .form-grid { display:flex; flex-direction:column; gap:14rpx; }
 .form-item { display:flex; flex-direction:column; gap:10rpx; }
 .form-label { font-size:20rpx; color:#6e6488; }
-.form-input { width:100%; padding:18rpx 20rpx; border-radius:20rpx; background:#faf8ff; font-size:21rpx; color:#2d2454; }
+.form-input {
+  width:100%;
+  height:88rpx;
+  line-height:88rpx;
+  padding:0 20rpx;
+  border-radius:20rpx;
+  background:#faf8ff;
+  font-size:22rpx;
+  color:#2d2454;
+  box-sizing:border-box;
+  vertical-align:middle;
+}
 .form-input.readonly { color:#9a8fb6; }
-.primary-btn,.secondary-btn { width:100%; height:96rpx; margin-top:18rpx; border-radius:22rpx; color:#fff; font-size:23rpx; font-weight:700; }
+.primary-btn,.secondary-btn { width:100%; height:88rpx; margin-top:18rpx; padding:0 20rpx; border-radius:22rpx; color:#fff; font-size:28rpx; font-weight:700; }
 .primary-btn { background:linear-gradient(135deg,#7b61ff 0%,#947dff 100%); }
 .secondary-btn { background:linear-gradient(135deg,#8b83a8 0%,#7b7397 100%); }
+.secondary-btn.ghost { margin-top:0; background:#fff; color:#7b61ff; border:2rpx solid #e8e0ff; }
 .primary-btn::after,.secondary-btn::after { border:none; }
 </style>
