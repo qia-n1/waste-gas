@@ -1,3 +1,0 @@
-name,num_layers,best_val_loss,checkpoint_path,avg_r2,avg_mae,avg_rmse,trend_accuracy,exceed_accuracy,short_r2,medium_r2,long_r2
-baseline_lstm_three_quarter_layers,2,0.009753218321922295,artifacts_dlinear_notebook/models/baseline_lstm_three_quarter_layers_best.pth,0.6351236005624136,6.713798423608144,9.5029119019368,0.5395140237612062,0.9942770413278378,0.9010096192359924,0.6222036480903625,0.38212549686431885
-baseline_lstm_half_layers,1,0.009678590563059856,artifacts_dlinear_notebook/models/baseline_lstm_half_layers_best.pth,0.6243767316142718,8.104894235730171,9.68874830346747,0.534428563817679,0.9939289294864654,0.8910349011421204,0.6082316040992737,0.3738322854042053
