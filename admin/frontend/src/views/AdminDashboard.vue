@@ -10,6 +10,7 @@ import ContinuousAlerts from "@/components/dashboard/ContinuousAlerts.vue";
 import DecisionSupport from "@/components/dashboard/DecisionSupport.vue";
 import EquipmentStatusChart from "@/components/dashboard/EquipmentStatusChart.vue";
 import FactoryScene from "@/components/dashboard/FactoryScene.vue";
+import TopContributorCharts from "@/components/dashboard/TopContributorCharts.vue";
 import VocsTrendChart from "@/components/dashboard/VocsTrendChart.vue";
 import DashboardLayout from "@/layouts/DashboardLayout.vue";
 import { useAlertsStore } from "@/stores/alerts";
@@ -128,6 +129,7 @@ onBeforeUnmount(() => {
     <template #left>
       <VocsTrendChart :trend="dashboardStore.overview.trend" />
       <EquipmentStatusChart :data="dashboardStore.equipmentStatus" :attribution="dashboardStore.attribution" />
+      <TopContributorCharts :items="dashboardStore.topContributorSeries" />
       <AnomalyHeatmap :data="dashboardStore.heatmap" />
     </template>
 

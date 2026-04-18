@@ -43,6 +43,35 @@ SENSOR_FIELDS = [
     "rto_out_temp",
 ]
 
+# Mirrors admin/frontend/src/utils/sensorMeta.ts
+SENSOR_LABEL_META: Dict[str, Dict[str, str]] = {
+    "ambient_temp": {"label": "环境温度", "unit": "°C"},
+    "ambient_humidity": {"label": "环境湿度", "unit": "%"},
+    "ambient_pressure": {"label": "环境压力", "unit": "kPa"},
+    "coating_flow": {"label": "喷涂风量", "unit": "m³/h"},
+    "coating_conc": {"label": "喷涂浓度", "unit": "mg/m³"},
+    "coating_temp": {"label": "喷涂温度", "unit": "°C"},
+    "coating_pressure": {"label": "喷涂压力", "unit": "kPa"},
+    "rotor_speed": {"label": "转轮转速", "unit": "rpm"},
+    "adsorption_fan_power": {"label": "吸附风机功率", "unit": "kW"},
+    "desorption_fan_power": {"label": "脱附风机功率", "unit": "kW"},
+    "rotor_inlet_temp": {"label": "转轮入口温度", "unit": "°C"},
+    "rotor_inlet_humid": {"label": "转轮入口湿度", "unit": "%"},
+    "desorption_temp": {"label": "脱附温度", "unit": "°C"},
+    "concentrated_flow": {"label": "浓缩风量", "unit": "m³/h"},
+    "concentrated_conc": {"label": "浓缩浓度", "unit": "mg/m³"},
+    "concentrated_temp": {"label": "浓缩温度", "unit": "°C"},
+    "concentrated_pressure": {"label": "浓缩压力", "unit": "kPa"},
+    "rto_in_flow": {"label": "RTO入口流量", "unit": "m³/h"},
+    "rto_in_conc": {"label": "RTO入口浓度", "unit": "mg/m³"},
+    "rto_in_temp": {"label": "RTO入口温度", "unit": "°C"},
+    "rto_in_pressure": {"label": "RTO入口压力", "unit": "kPa"},
+    "burner_gas_flow": {"label": "燃烧器气体流量", "unit": "Nm³/h"},
+    "combustion_temp": {"label": "燃烧温度", "unit": "°C"},
+    "rto_out_conc": {"label": "RTO出口浓度", "unit": "mg/m³"},
+    "rto_out_temp": {"label": "RTO出口温度", "unit": "°C"},
+}
+
 
 def _parse_timestamp(value: Optional[str]) -> Optional[datetime]:
     if not value:
@@ -396,6 +425,59 @@ async def fetch_alerts(limit: int = 30) -> list[dict[str, Any]]:
     return []
 
 
+def _build_top_contributor_series(
+    history: List[Dict[str, Any]],
+    attribution: Optional[Dict[str, Any]],
+    top_n: int = 6,
+    window: int = 48,
+) -> List[Dict[str, Any]]:
+    if not attribution or not history:
+        return []
+    contributions = attribution.get("feature_contributions") or []
+    if not contributions:
+        return []
+
+    sorted_contrib = sorted(
+        contributions, key=lambda item: _as_float(item.get("ratio")), reverse=True
+    )[:top_n]
+    recent = history[-window:] if len(history) > window else history
+
+    result: List[Dict[str, Any]] = []
+    for item in sorted_contrib:
+        feature = str(item.get("feature", ""))
+        if not feature:
+            continue
+        meta = SENSOR_LABEL_META.get(feature, {"label": feature, "unit": ""})
+        series = [
+            {
+                "timestamp": str(row.get("timestamp", "")),
+                "value": _safe_round(row.get(feature), 2),
+            }
+            for row in recent
+        ]
+        values = [point["value"] for point in series]
+        current_value = values[-1] if values else 0.0
+        mean_value = sum(values) / len(values) if values else 0.0
+        max_value = max(values) if values else 0.0
+        min_value = min(values) if values else 0.0
+        result.append(
+            {
+                "feature": feature,
+                "label": meta["label"],
+                "unit": meta["unit"],
+                "group": str(item.get("group", "")),
+                "ratio": _as_float(item.get("ratio")),
+                "contribution": _as_float(item.get("contribution")),
+                "currentValue": current_value,
+                "meanValue": round(mean_value, 2),
+                "maxValue": max_value,
+                "minValue": min_value,
+                "series": series,
+            }
+        )
+    return result
+
+
 async def get_dashboard_overview() -> dict[str, Any]:
     history = _load_csv_rows(limit=96)
     status, latest_prediction, latest_sensor, alerts, ensemble_result = await asyncio.gather(
@@ -472,6 +554,9 @@ async def get_dashboard_overview() -> dict[str, Any]:
 
     if attribution:
         result["attribution"] = attribution
+        top_series = _build_top_contributor_series(history, attribution)
+        if top_series:
+            result["topContributorSeries"] = top_series
 
     return result
 

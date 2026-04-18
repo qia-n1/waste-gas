@@ -3,6 +3,10 @@ import { computed } from "vue";
 import VChart from "vue-echarts";
 
 import type { Attribution, EquipmentStatusResponse } from "@/types/dashboard";
+import { sensorMeta } from "@/utils/sensorMeta";
+
+const featureLabel = (feature: string) =>
+  sensorMeta.find((item) => item.field === feature)?.label ?? feature;
 
 const GROUP_COLORS: Record<string, string> = {
   "废气源与环境组": "#53d1ff",
@@ -69,7 +73,7 @@ const option = computed(() => {
         pageIconInactiveColor: "#3a4a6b",
         pageTextStyle: { color: "#8ea3c9", fontSize: 10 },
         formatter: (name: string) => {
-          const item = contributions.find((c) => c.feature === name);
+          const item = contributions.find((c) => featureLabel(c.feature) === name);
           return item ? `${name} ${(item.ratio * 100).toFixed(0)}%` : name;
         },
       },
@@ -81,7 +85,7 @@ const option = computed(() => {
           itemStyle: { borderColor: "#08111f", borderWidth: 3 },
           label: { show: false },
           data: contributions.map((item, index) => ({
-            name: item.feature,
+            name: featureLabel(item.feature),
             value: item.ratio,
             contribution: item.contribution,
             group: item.group,
