@@ -1,0 +1,23 @@
+services:
+  vocs-server-v6:
+    build:
+      context: ../../..
+      dockerfile: models/new_VOC/ensemble_docker/Dockerfile.v6
+    container_name: vocs-server-v6
+    ports:
+      - "8001:8001"
+    environment:
+      - MODEL_PATH=${MODEL_PATH:-models/vocs_seq2seq_v6_best.pth}
+      - SCALER_PATH=${SCALER_PATH:-models/vocs_scalers_v6.pkl}
+      - CSV_PATH=${CSV_PATH:-vocs_realtime_data/vocs_realtime_data.csv}
+      - TZ=${TZ:-Asia/Shanghai}
+    volumes:
+      - ../../../models:/app/models:ro
+      - ../../../vocs_realtime_data:/app/vocs_realtime_data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/status')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
