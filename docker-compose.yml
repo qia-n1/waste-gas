@@ -13,8 +13,8 @@ services:
       - ./models:/app/models
     environment:
       # 模型文件路径
-      - MODEL_PATH=models/vocs_seq2seq_v2_best.pth
-      - SCALER_PATH=models/vocs_scalers_v2.pkl
+      - MODEL_PATH=models/vocs_seq2seq_v6_best.pth
+      - SCALER_PATH=models/vocs_scalers_v6.pkl
       # CSV 数据路径
       - CSV_PATH=vocs_realtime_data/vocs_realtime_data.csv
       # 设置时区为中国时区

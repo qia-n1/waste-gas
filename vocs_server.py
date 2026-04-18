@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from datetime import datetime, timedelta, timezone
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from contextlib import asynccontextmanager
 import uvicorn
 from sklearn.preprocessing import MinMaxScaler
+from src.inference_module import VOCSInferenceModule, ModuleRuntimeConfig, SENSOR_COLUMNS
 
 LOG_FORMAT = '%(asctime)s - %(levelname)s - %(message)s'
 logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
@@ -216,8 +217,28 @@ class Alert(BaseModel):
     threshold: float
     acknowledged: bool
 
+
+class BatchSequencePoint(BaseModel):
+    timestamp: str
+    feature_values: List[float]
+
+
+class BatchPredictRequest(BaseModel):
+    data_sequence: List[BatchSequencePoint]
+
+
+class BatchPredictResponse(BaseModel):
+    status: str
+    predictions: List[float]
+    is_exceed_warning: bool
+    alerts: List[Dict[str, Any]]
+    incremental_attribution: Dict[str, Any]
+
 class VOCsSystemManager:
     def __init__(self):
+        self.INFERENCE_CONTRACT_VERSION = "v1-fixed-v6"
+        self.REQUIRED_MODEL_KEYWORD = "v6"
+        self.REQUIRED_SCALER_KEYWORD = "v6"
         self.model = None
         self.sensor_data_buffer: List[SensorData] = []
         self.predictions: List[PredictionResult] = []
@@ -230,8 +251,10 @@ class VOCsSystemManager:
         self.DATA_COLLECTION_INTERVAL = 15
         self.MIN_DATA_FOR_PREDICTION = 96
         self.CSV_FILE_PATH = os.getenv("CSV_PATH", "vocs_realtime_data/vocs_realtime_data.csv")
-        self.SCALER_FILE_PATH = os.getenv("SCALER_PATH", "models/vocs_scalers_v5.pkl")
-        self.MODEL_PATH = os.getenv("MODEL_PATH", "models/vocs_seq2seq_v5_best.pth")
+        self.SCALER_FILE_PATH = os.getenv("SCALER_PATH", "models/vocs_scalers_v6.pkl")
+        self.MODEL_PATH = os.getenv("MODEL_PATH", "models/vocs_seq2seq_v6_best.pth")
+        self.module_ready = False
+        self.module_ready_reason = "not_initialized"
         self.total_data_received = 0
         self.total_predictions = 0
         self.total_alerts = 0
@@ -356,11 +379,24 @@ class VOCsSystemManager:
             if model_path is None:
                 model_path = self.MODEL_PATH
 
+            scaler_path = self.SCALER_FILE_PATH
+            if self.REQUIRED_MODEL_KEYWORD not in os.path.basename(model_path):
+                self.module_ready = False
+                self.module_ready_reason = f"invalid_model_artifact:{model_path}"
+                logger.error("Fixed deployment requires v6 model artifact.")
+                return False
+            if self.REQUIRED_SCALER_KEYWORD not in os.path.basename(scaler_path):
+                self.module_ready = False
+                self.module_ready_reason = f"invalid_scaler_artifact:{scaler_path}"
+                logger.error("Fixed deployment requires v6 scaler artifact.")
+                return False
+
             if os.path.exists(model_path):
                 logger.info(f"Loading model from {model_path}")
                 checkpoint = torch.load(model_path, map_location='cpu', weights_only=False)
                 config = Seq2SeqV2Config()
-                input_dim = 51
+                checkpoint_state = checkpoint['model_state_dict'] if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint else checkpoint
+                input_dim = int(checkpoint_state['encoder.weight_ih_l0'].shape[1])
                 model = ImprovedSeq2SeqModel(config, input_dim)
 
                 if isinstance(checkpoint, dict):
@@ -375,23 +411,37 @@ class VOCsSystemManager:
                 model.eval()
                 self.model = model
 
-                scaler_path = self.SCALER_FILE_PATH
                 if os.path.exists(scaler_path):
                     with open(scaler_path, 'rb') as f:
                         scaler_data = pickle.load(f)
                     self.feature_scaler = scaler_data['feature_scaler']
                     self.target_scaler = scaler_data['target_scaler']
+                    scaler_input_dim = int(scaler_data.get('input_dim', -1))
+                    if scaler_input_dim != input_dim:
+                        self.module_ready = False
+                        self.module_ready_reason = f"dim_mismatch:model={input_dim},scaler={scaler_input_dim}"
+                        logger.error(f"Model/scaler input dim mismatch: model={input_dim}, scaler={scaler_input_dim}")
+                        return False
                     logger.info(f"Scaler loaded - dim: {scaler_data.get('input_dim', 'N/A')}")
                 else:
-                    logger.warning("Scaler file not found, predictions may be inaccurate")
+                    self.module_ready = False
+                    self.module_ready_reason = f"scaler_not_found:{scaler_path}"
+                    logger.error("Scaler file not found")
+                    return False
 
                 logger.info(f"Model loaded: {config.HIDDEN_DIM}D x {config.NUM_LAYERS}L, seq={config.SEQ_LEN}, pred={config.PRED_LEN}")
+                self.module_ready = True
+                self.module_ready_reason = "ready"
                 return True
             else:
                 logger.warning(f"Model file not found: {model_path}")
+                self.module_ready = False
+                self.module_ready_reason = f"model_not_found:{model_path}"
                 return False
         except Exception as e:
             logger.error(f"Failed to load model: {e}")
+            self.module_ready = False
+            self.module_ready_reason = f"load_error:{e}"
             return False
 
     def add_sensor_data(self, data: SensorData):
@@ -500,152 +550,68 @@ class VOCsSystemManager:
             logger.error(f"Warmup prediction failed: {e}")
             return None
 
-    def _parse_timestamp(self, timestamp_str: str) -> pd.Timestamp:
-        try:
-            if 'T' in timestamp_str:
-                return pd.to_datetime(timestamp_str)
-            else:
-                return pd.to_datetime(timestamp_str)
-        except Exception as e:
-            logger.warning(f"Timestamp parsing failed: {timestamp_str}, {e}")
-            return pd.NaT
-
-    def _extract_features(self) -> np.ndarray:
-        try:
-            data_list = []
-            for data in self.sensor_data_buffer[-self.BUFFER_SIZE:]:
-                data_dict = {
-                    'timestamp': data.timestamp,
-                    'ambient_temp': data.ambient_temp,
-                    'ambient_humidity': data.ambient_humidity,
-                    'ambient_pressure': data.ambient_pressure,
-                    'coating_flow': data.coating_flow,
-                    'coating_conc': data.coating_conc,
-                    'coating_temp': data.coating_temp,
-                    'coating_pressure': data.coating_pressure,
-                    'rotor_speed': data.rotor_speed,
-                    'adsorption_fan_power': data.adsorption_fan_power,
-                    'desorption_fan_power': data.desorption_fan_power,
-                    'rotor_inlet_temp': data.rotor_inlet_temp,
-                    'rotor_inlet_humid': data.rotor_inlet_humid,
-                    'desorption_temp': data.desorption_temp,
-                    'concentrated_flow': data.concentrated_flow,
-                    'concentrated_conc': data.concentrated_conc,
-                    'concentrated_temp': data.concentrated_temp,
-                    'concentrated_pressure': data.concentrated_pressure,
-                    'rto_in_flow': data.rto_in_flow,
-                    'rto_in_temp': data.rto_in_temp,
-                    'rto_in_pressure': data.rto_in_pressure,
-                    'burner_gas_flow': data.burner_gas_flow,
-                    'combustion_temp': data.combustion_temp,
-                    'rto_in_conc': data.rto_in_conc,
-                    'rto_out_conc': data.rto_out_conc,
-                    'rto_out_temp': data.rto_out_temp
-                }
-                data_list.append(data_dict)
-
-            df = pd.DataFrame(data_list)
-            logger.info(f"Feature extraction - Raw data: {df.shape}")
-
-            df['timestamp'] = df['timestamp'].apply(self._parse_timestamp)
-            df['hour_sin'] = np.sin(2 * np.pi * df['timestamp'].dt.hour / 24)
-            df['hour_cos'] = np.cos(2 * np.pi * df['timestamp'].dt.hour / 24)
-            df['weekday_sin'] = np.sin(2 * np.pi * df['timestamp'].dt.weekday / 7)
-            df['weekday_cos'] = np.cos(2 * np.pi * df['timestamp'].dt.weekday / 7)
-            df['month_sin'] = np.sin(2 * np.pi * df['timestamp'].dt.month / 12)
-            df['month_cos'] = np.cos(2 * np.pi * df['timestamp'].dt.month / 12)
-
-            target_col = 'rto_out_conc'
-            windows = [6, 12, 24, 48, 96]
-
-            for window in windows:
-                df[f'{target_col}_rolling_mean_{window}'] = df[target_col].rolling(window=window, min_periods=1).mean()
-                df[f'{target_col}_rolling_std_{window}'] = df[target_col].rolling(window=window, min_periods=1).std().fillna(0)
-                df[f'{target_col}_rolling_trend_{window}'] = df[target_col].rolling(window=window).apply(
-                    lambda x: np.polyfit(range(len(x)), x, 1)[0] if len(x) >= 2 else 0
-                ).fillna(0)
-
-            df[f'{target_col}_diff_1'] = df[target_col].diff(1).fillna(0)
-            df[f'{target_col}_diff_4'] = df[target_col].diff(4).fillna(0)
-            df[f'{target_col}_diff_24'] = df[target_col].diff(24).fillna(0)
-            df[f'{target_col}_diff_96'] = df[target_col].diff(96).fillna(0)
-            df[f'{target_col}_ma_diff_24'] = df[target_col] - df[f'{target_col}_rolling_mean_24']
-
-            exclude_cols = ['timestamp', 'rto_out_conc']
-            feature_columns = [col for col in df.columns if col not in exclude_cols]
-            X = df[feature_columns].values
-            y = df['rto_out_conc'].values.reshape(-1, 1)
-
-            if hasattr(self.feature_scaler, 'scale_'):
-                X_scaled = self.feature_scaler.transform(X)
-                y_scaled = self.target_scaler.transform(y)
-            else:
-                logger.warning("Fitting new scalers - predictions may be inconsistent")
-                self.feature_scaler.fit(X)
-                self.target_scaler.fit(y)
-                X_scaled = self.feature_scaler.transform(X)
-                y_scaled = self.target_scaler.transform(y)
-
-            X_with_hist = np.concatenate([X_scaled, y_scaled], axis=1)
-            features = X_with_hist.astype(np.float32)
-
-            expected_shape = (96, 51)
-            if features.shape != expected_shape:
-                if features.shape[0] != 96:
-                    logger.error(f"Invalid sequence length: {features.shape[0]}, expected 96")
-                    return None
-                if features.shape[1] != 51:
-                    if features.shape[1] > 51:
-                        features = features[:, :51]
-                    else:
-                        padding = np.zeros((96, 51 - features.shape[1]), dtype=np.float32)
-                        features = np.concatenate([features, padding], axis=1)
-
-            logger.info(f"Features extracted: {features.shape}")
-            return features
-
-        except Exception as e:
-            logger.error(f"Feature extraction failed: {e}")
-            return None
-
     def _ai_prediction(self) -> Optional[PredictionResult]:
         try:
-            if self.model is None:
-                logger.warning("Model not loaded, using warmup prediction")
+            if len(self.sensor_data_buffer) < self.BUFFER_SIZE:
+                return self._warmup_prediction(len(self.sensor_data_buffer))
+
+            if not self.module_ready:
+                logger.error(f"Inference module is not ready: {self.module_ready_reason}")
+                return None
+
+            batch_sequence = []
+            feature_columns = SENSOR_COLUMNS[1:]
+            for row in self.sensor_data_buffer[-self.BUFFER_SIZE:]:
+                feature_values = [float(getattr(row, col, 0.0)) for col in feature_columns]
+                batch_sequence.append(
+                    {
+                        "timestamp": row.timestamp,
+                        "feature_values": feature_values,
+                    }
+                )
+
+            module_response = inference_module.run(
+                batch_sequence,
+                model=self.model,
+                feature_scaler=self.feature_scaler,
+                target_scaler=self.target_scaler,
+            )
+            predicted_values = np.asarray(module_response.get("predictions", []), dtype=np.float32)
+            if predicted_values.size == 0:
+                logger.warning("Empty module predictions, using warmup")
                 return self._warmup_prediction(self.BUFFER_SIZE)
-
-            features = self._extract_features()
-            if features is None:
-                logger.error("Feature extraction failed, falling back to warmup")
-                return self._warmup_prediction(self.BUFFER_SIZE)
-
-            features_tensor = torch.FloatTensor(features).unsqueeze(0)
-
-            with torch.no_grad():
-                predictions = self.model(features_tensor)
-
-            if isinstance(predictions, torch.Tensor):
-                predicted_values_normalized = predictions.squeeze().cpu().numpy()
-                predicted_values = self.target_scaler.inverse_transform(
-                    predicted_values_normalized.reshape(-1, 1)
-                ).flatten()
-            else:
-                logger.warning("Invalid model output, using warmup")
-                return self._warmup_prediction(self.BUFFER_SIZE)
-
-            predicted_values = np.clip(predicted_values, 0, 500)
 
             result = PredictionResult(
                 timestamp=get_local_timestamp(),
                 prediction_horizon=self.PREDICTION_HORIZON,
                 predicted_values=predicted_values.tolist(),
                 confidence=0.85,
-                alert_triggered=False,
+                alert_triggered=bool(module_response.get("is_exceed_warning", False)),
                 alert_message="AI model prediction",
-                prediction_type=""
+                prediction_type="DecoupledModule"
             )
 
-            self._check_alerts(result)
+            module_alerts = module_response.get("alerts", [])
+            if module_alerts:
+                max_alert = max(module_alerts, key=lambda item: float(item.get("value", 0.0)))
+                max_value = float(max_alert.get("value", 0.0))
+                now_local = datetime.now().astimezone()
+                alert = Alert(
+                    alert_id=f"ALT-{now_local.strftime('%Y%m%d%H%M%S')}",
+                    timestamp=get_local_timestamp(),
+                    level="critical" if max_value > 100 else "warning",
+                    message=f"VOCs threshold exceeded! Max: {max_value:.2f}, Threshold: {self.ALERT_THRESHOLD}",
+                    value=max_value,
+                    threshold=self.ALERT_THRESHOLD,
+                    acknowledged=False,
+                )
+                self.alerts.insert(0, alert)
+                self.total_alerts += 1
+                if len(self.alerts) > 100:
+                    self.alerts.pop()
+                result.alert_triggered = True
+                result.alert_message = alert.message
+
             self.latest_prediction = result
             self.predictions.append(result)
             self.total_predictions += 1
@@ -694,6 +660,12 @@ class VOCsSystemManager:
             "version": "2.2.0",
             "status": "running",
             "model_loaded": self.model is not None,
+            "module_ready": self.module_ready,
+            "module_ready_reason": self.module_ready_reason,
+            "inference_contract_version": self.INFERENCE_CONTRACT_VERSION,
+            "model_family": "v6",
+            "model_path": self.MODEL_PATH,
+            "scaler_path": self.SCALER_FILE_PATH,
             "data_fields_count": len(self.dataset_fields),
             "data_categories": {
                 "meteorological": 3,
@@ -730,6 +702,9 @@ class VOCsSystemManager:
 
 
 system_manager = VOCsSystemManager()
+inference_module = VOCSInferenceModule(
+    ModuleRuntimeConfig(seq_len=96, pred_len=24, exceed_threshold=80.0, baseline_value=35.0)
+)
 
 
 class SSEManager:
@@ -836,6 +811,7 @@ async def root():
         "endpoints": {
             "status": "/status",
             "receive_data": "/sensor-data",
+            "batch_predict": "/predict",
             "predictions": "/predictions",
             "alerts": "/alerts",
             "events": "/events"
@@ -873,6 +849,48 @@ async def receive_sensor_data(data: SensorData):
         "system_phase": system_manager._get_system_phase(),
         "buffer_size": len(system_manager.sensor_data_buffer)
     }
+
+
+@app.post("/predict", response_model=BatchPredictResponse)
+async def batch_predict(request: BatchPredictRequest):
+    seq_len = inference_module.config.seq_len
+    expected_features = len(SENSOR_COLUMNS) - 1
+
+    if not system_manager.module_ready:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Inference module not ready: {system_manager.module_ready_reason}",
+        )
+
+    if len(request.data_sequence) != seq_len:
+        raise HTTPException(
+            status_code=400,
+            detail=f"数据长度不合法，预期 {seq_len} 步数据，收到 {len(request.data_sequence)} 步",
+        )
+
+    for idx, point in enumerate(request.data_sequence):
+        if len(point.feature_values) != expected_features:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"第 {idx + 1} 个数据点 feature_values 维度不合法，"
+                    f"预期 {expected_features}，收到 {len(point.feature_values)}"
+                ),
+            )
+
+    try:
+        response = inference_module.run(
+            request.data_sequence,
+            model=system_manager.model,
+            feature_scaler=system_manager.feature_scaler,
+            target_scaler=system_manager.target_scaler,
+        )
+        return BatchPredictResponse(**response)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error(f"Batch predict failed: {exc}")
+        raise HTTPException(status_code=500, detail="Prediction failed") from exc
 
 
 @app.get("/predictions", response_model=List[PredictionResult])
