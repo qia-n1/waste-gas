@@ -74,6 +74,16 @@ class VOCsDataProcessor:
         self.config = config
         self.feature_scaler = MinMaxScaler()
         self.target_scaler = MinMaxScaler()
+        self.core_covariates = [
+            'ambient_temp', 'ambient_humidity', 'ambient_pressure',
+            'coating_flow', 'coating_conc', 'coating_temp', 'coating_pressure',
+            'rotor_speed', 'adsorption_fan_power', 'desorption_fan_power',
+            'rotor_inlet_temp', 'rotor_inlet_humid',
+            'desorption_temp', 'concentrated_flow', 'concentrated_conc',
+            'concentrated_temp', 'concentrated_pressure',
+            'rto_in_flow', 'rto_in_temp', 'rto_in_pressure',
+            'burner_gas_flow', 'combustion_temp', 'rto_out_temp'
+        ]
 
     def add_time_features(self, df):
         df = df.copy()
@@ -105,6 +115,16 @@ class VOCsDataProcessor:
         df[f'{target_col}_diff_24'] = df[target_col].diff(24).fillna(0)
         df[f'{target_col}_diff_96'] = df[target_col].diff(96).fillna(0)
         df[f'{target_col}_ma_diff_24'] = df[target_col] - df[f'{target_col}_rolling_mean_24']
+
+        return df
+
+    def add_explicit_trend_features(self, df):
+        df = df.copy()
+
+        trend_columns = ['rto_out_conc'] + [col for col in self.core_covariates if col in df.columns]
+        for col in trend_columns:
+            df[f'{col}_diff_1'] = df[col].diff(1).fillna(0)
+            df[f'{col}_diff_2'] = df[col].diff(2).fillna(0)
 
         return df
 
@@ -155,6 +175,7 @@ class VOCsDataProcessor:
     def process(self, df):
         df = self.add_time_features(df)
         df = self.add_rolling_features(df)
+        df = self.add_explicit_trend_features(df)
         df = self.augment_exceed_samples(df)
         X, y = self.create_sequences(df)
         return self.split_data(X, y)
@@ -165,9 +186,13 @@ class VOCsDataProcessor:
                 df_with_features = df.copy()
                 df_with_features = self.add_time_features(df_with_features)
                 df_with_features = self.add_rolling_features(df_with_features)
+                df_with_features = self.add_explicit_trend_features(df_with_features)
                 exclude_cols = ['timestamp', 'rto_out_conc']
                 feature_columns = [col for col in df_with_features.columns if col not in exclude_cols]
             else:
+                trend_feature_columns = []
+                for col in self.core_covariates:
+                    trend_feature_columns.extend([f'{col}_diff_1', f'{col}_diff_2'])
                 feature_columns = [
                     'hour_sin', 'hour_cos',
                     'weekday_sin', 'weekday_cos',
@@ -179,8 +204,10 @@ class VOCsDataProcessor:
                     'rto_out_conc_rolling_mean_96', 'rto_out_conc_rolling_std_96', 'rto_out_conc_rolling_trend_96',
                     'rto_out_conc_diff_1', 'rto_out_conc_diff_4',
                     'rto_out_conc_diff_24', 'rto_out_conc_diff_96',
-                    'rto_out_conc_ma_diff_24'
+                    'rto_out_conc_ma_diff_24',
+                    'rto_out_conc_diff_2'
                 ]
+                feature_columns.extend(trend_feature_columns)
 
             scaler_data = {
                 'feature_scaler': self.feature_scaler,
@@ -335,7 +362,7 @@ class ImprovedTrainer:
         )
 
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, mode='min', factor=0.5, patience=10
+            self.optimizer, mode='max', factor=0.5, patience=10
         )
 
         self.criterion = MultiStageWeightedLoss(
@@ -357,6 +384,8 @@ class ImprovedTrainer:
         }
 
         self.best_val_loss = float('inf')
+        self.best_trend_acc = float('-inf')
+        self.best_val_r2 = float('-inf')
         self.patience_counter = 0
 
     def _init_log_file(self):
@@ -378,6 +407,20 @@ class ImprovedTrainer:
         with open(self.log_file_path, 'a', encoding='utf-8') as f:
             f.write(message + "\n")
 
+    def _combined_loss(self, predictions, targets):
+        # Base loss + trend-aware penalties to reduce inference rollback on rising segments.
+        mse_loss = self.criterion(predictions, targets)
+
+        y_diff = targets[:, 1:, :] - targets[:, :-1, :]
+        pred_diff = predictions[:, 1:, :] - predictions[:, :-1, :]
+        diff_mse_loss = torch.nn.functional.mse_loss(pred_diff, y_diff)
+
+        direction_match = (y_diff * pred_diff > 0).float()
+        direction_penalty = torch.mean(1.0 - direction_match)
+
+        alpha, beta, gamma = 1.0, 0.5, 0.1
+        return alpha * mse_loss + beta * diff_mse_loss + gamma * direction_penalty
+
     def train_epoch(self, train_loader):
         self.model.train()
         total_loss = 0
@@ -387,7 +430,7 @@ class ImprovedTrainer:
             y_batch = y_batch.to(self.device)
 
             predictions = self.model(X_batch, y_batch, teacher_forcing_ratio=self.current_teacher_forcing)
-            loss = self.criterion(predictions, y_batch)
+            loss = self._combined_loss(predictions, y_batch)
 
             self.optimizer.zero_grad()
             loss.backward()
@@ -410,7 +453,7 @@ class ImprovedTrainer:
                 y_batch = y_batch.to(self.device)
 
                 predictions = self.model(X_batch)
-                loss = self.criterion(predictions, y_batch)
+                loss = self._combined_loss(predictions, y_batch)
 
                 total_loss += loss.item()
                 all_preds.append(predictions.cpu().numpy())
@@ -461,7 +504,9 @@ class ImprovedTrainer:
             train_loss = self.train_epoch(train_loader)
             val_loss, val_r2, trend_accuracy, exceed_accuracy = self.validate(val_loader)
 
-            self.scheduler.step(val_loss)
+            # Primary objective: trend accuracy. Secondary objective: R2.
+            scheduler_metric = trend_accuracy + 0.05 * val_r2
+            self.scheduler.step(scheduler_metric)
 
             self.current_teacher_forcing = max(
                 self.config.TEACHER_FORCING_END,
@@ -485,11 +530,21 @@ class ImprovedTrainer:
                          f"TF: {self.current_teacher_forcing:.2f} | "
                          f"LR: {current_lr:.6f}")
 
-            if val_loss < self.best_val_loss:
+            trend_tol = 1e-6
+            is_better_trend = trend_accuracy > self.best_trend_acc + trend_tol
+            is_tie_and_better_r2 = abs(trend_accuracy - self.best_trend_acc) <= trend_tol and val_r2 > self.best_val_r2
+            is_double_tie_and_better_loss = (
+                abs(trend_accuracy - self.best_trend_acc) <= trend_tol and
+                abs(val_r2 - self.best_val_r2) <= trend_tol and
+                val_loss < self.best_val_loss
+            )
+            if is_better_trend or is_tie_and_better_r2 or is_double_tie_and_better_loss:
+                self.best_trend_acc = trend_accuracy
+                self.best_val_r2 = val_r2
                 self.best_val_loss = val_loss
                 self.patience_counter = 0
                 self.save_model(epoch, val_r2, trend_accuracy, exceed_accuracy, is_best=True)
-                self._log(f"  最佳模型已保存 (Epoch {epoch}, R²={val_r2:.4f})")
+                self._log(f"  最佳模型已保存 (Epoch {epoch}, R²={val_r2:.4f}, 趋势={trend_accuracy:.1%}, Loss={val_loss:.6f})")
             else:
                 self.patience_counter += 1
 
@@ -500,6 +555,8 @@ class ImprovedTrainer:
         self._log("=" * 70)
         self._log("训练完成！")
         self._log(f"最佳验证Loss: {self.best_val_loss:.6f}")
+        self._log(f"最佳验证R²: {self.best_val_r2:.4f}")
+        self._log(f"最佳趋势准确率: {self.best_trend_acc:.1%}")
         self._log(f"训练结束时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         self._log("=" * 70)
 
@@ -507,10 +564,10 @@ class ImprovedTrainer:
 
     def save_model(self, epoch, r2, trend_acc, exceed_acc, is_best=False):
         if is_best:
-            path = os.path.join(self.config.MODEL_DIR, "vocs_seq2seq_v2_best.pth")
+            path = os.path.join(self.config.MODEL_DIR, "vocs_seq2seq_v5_best.pth")
         else:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            path = os.path.join(self.config.MODEL_DIR, f"vocs_seq2seq_v2_epoch{epoch}_{timestamp}.pth")
+            path = os.path.join(self.config.MODEL_DIR, f"vocs_seq2seq_v5_epoch{epoch}_{timestamp}.pth")
 
         torch.save({
             'epoch': epoch,
@@ -520,6 +577,8 @@ class ImprovedTrainer:
             'val_r2': r2,
             'trend_accuracy': trend_acc,
             'exceed_accuracy': exceed_acc,
+            'best_trend_acc': self.best_trend_acc,
+            'best_val_r2': self.best_val_r2,
             'teacher_forcing': self.current_teacher_forcing
         }, path)
 
@@ -605,7 +664,19 @@ def evaluate_model(model, test_loader, processor, config):
     else:
         print(f"未达标，当前R²={avg_r2:.4f}")
 
-    return all_preds, all_targets, metrics
+    summary = {
+        'avg_r2': float(avg_r2),
+        'avg_mae': float(avg_mae),
+        'avg_rmse': float(avg_rmse),
+        'trend_acc': float(trend_acc),
+        'exceed_acc': float(exceed_acc),
+        'short_r2': float(short_r2),
+        'medium_r2': float(medium_r2),
+        'long_r2': float(long_r2),
+        'target_rate': float(avg_r2 * 100.0),
+    }
+
+    return all_preds, all_targets, metrics, summary
 
 
 def main():
@@ -646,14 +717,44 @@ def main():
 
     trainer.save_logs()
 
-    model_path = os.path.join(config.MODEL_DIR, "vocs_seq2seq_v2_best.pth")
-    print(f"\n加载最佳模型: {model_path}")
+    model_path = os.path.join(config.MODEL_DIR, "vocs_seq2seq_v5_best.pth")
+    print(f"加载最佳模型: {model_path}")
     checkpoint = torch.load(model_path, map_location='cpu', weights_only=False)
     model.load_state_dict(checkpoint['model_state_dict'])
 
-    evaluate_model(model, test_loader, processor, config)
+    test_preds, test_targets, test_metrics, test_summary = evaluate_model(model, test_loader, processor, config)
 
-    scaler_path = os.path.join(config.MODEL_DIR, "vocs_scalers_v2.pkl")
+    test_log_path = os.path.join(config.LOG_DIR, "test_results.log")
+    with open(test_log_path, 'w', encoding='utf-8') as f:
+        f.write("=" * 70 + "\n")
+        f.write("VOCs v5 测试结果\n")
+        f.write("=" * 70 + "\n")
+        f.write(f"模型文件: {model_path}\n")
+        f.write(f"Scaler文件: {os.path.join(config.MODEL_DIR, 'vocs_scalers_v5.pkl')}\n")
+        f.write(f"平均R²: {test_summary['avg_r2']:.4f}\n")
+        f.write(f"平均MAE: {test_summary['avg_mae']:.4f}\n")
+        f.write(f"平均RMSE: {test_summary['avg_rmse']:.4f}\n")
+        f.write(f"6小时Trend Accuracy: {test_summary['trend_acc']:.1%}\n")
+        f.write(f"超标预测准确率: {test_summary['exceed_acc']:.1%}\n")
+        f.write(f"短期R²: {test_summary['short_r2']:.4f}\n")
+        f.write(f"中期R²: {test_summary['medium_r2']:.4f}\n")
+        f.write(f"长期R²: {test_summary['long_r2']:.4f}\n")
+        f.write("=" * 70 + "\n")
+
+    trainer._log("=" * 70)
+    trainer._log("测试完成！")
+    trainer._log(f"测试结果文件: {test_log_path}")
+    trainer._log(f"平均R²: {test_summary['avg_r2']:.4f}")
+    trainer._log(f"平均MAE: {test_summary['avg_mae']:.4f}")
+    trainer._log(f"平均RMSE: {test_summary['avg_rmse']:.4f}")
+    trainer._log(f"6小时趋势方向准确率: {test_summary['trend_acc']:.1%}")
+    trainer._log(f"超标预测准确率: {test_summary['exceed_acc']:.1%}")
+    trainer._log(f"短期R²: {test_summary['short_r2']:.4f}")
+    trainer._log(f"中期R²: {test_summary['medium_r2']:.4f}")
+    trainer._log(f"长期R²: {test_summary['long_r2']:.4f}")
+    trainer._log("=" * 70)
+
+    scaler_path = os.path.join(config.MODEL_DIR, "vocs_scalers_v5.pkl")
     processor.save_scalers(scaler_path, df=df)
 
     print("\n" + "="*70)

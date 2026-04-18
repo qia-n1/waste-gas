@@ -230,8 +230,8 @@ class VOCsSystemManager:
         self.DATA_COLLECTION_INTERVAL = 15
         self.MIN_DATA_FOR_PREDICTION = 96
         self.CSV_FILE_PATH = os.getenv("CSV_PATH", "vocs_realtime_data/vocs_realtime_data.csv")
-        self.SCALER_FILE_PATH = os.getenv("SCALER_PATH", "models/vocs_scalers_v2.pkl")
-        self.MODEL_PATH = os.getenv("MODEL_PATH", "models/vocs_seq2seq_v2_best.pth")
+        self.SCALER_FILE_PATH = os.getenv("SCALER_PATH", "models/vocs_scalers_v5.pkl")
+        self.MODEL_PATH = os.getenv("MODEL_PATH", "models/vocs_seq2seq_v5_best.pth")
         self.total_data_received = 0
         self.total_predictions = 0
         self.total_alerts = 0
