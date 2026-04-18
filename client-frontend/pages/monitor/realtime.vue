@@ -1,10 +1,9 @@
 <template>
-  <view class="monitor-page">
-    <view class="monitor-hero">
-      <view>
-        <text class="hero-kicker">REALTIME MONITOR</text>
+  <view class="monitor-page" :class="{ 'motion-ready': motionReady }">
+    <view class="monitor-hero motion-fade delay-1">
+      <view class="hero-text">
         <text class="page-title">实时监控</text>
-        <text class="page-subtitle">当前设备运行状态与关键监测指标实时同步。</text>
+        <text class="page-subtitle">设备与 VOCs 等指标</text>
       </view>
       <view class="header-actions">
         <button class="icon-btn" @click="refreshData"><text>🔄</text></button>
@@ -12,52 +11,66 @@
       </view>
     </view>
 
-    <view class="data-cards">
+    <view class="data-cards motion-fade delay-2">
       <view class="data-card accent-violet">
         <text class="data-label">VOCs 浓度</text>
-        <text class="data-value">{{ realTimeData.vocs }}</text>
+        <text class="data-value">{{ displayData.vocs }}</text>
         <text class="data-unit">mg/m³</text>
-        <text class="data-status" :class="vocsStatusClass">{{ vocsStatusText }}</text>
+        <StatusTag class="data-status" :label="vocsStatusText" :type="vocsStatusClass" />
       </view>
       <view class="data-card accent-pink">
         <text class="data-label">温度</text>
-        <text class="data-value">{{ realTimeData.temperature }}</text>
+        <text class="data-value">{{ displayData.temperature }}</text>
         <text class="data-unit">℃</text>
-        <text class="data-status" :class="tempStatusClass">{{ tempStatusText }}</text>
+        <StatusTag class="data-status" :label="tempStatusText" :type="tempStatusClass" />
       </view>
       <view class="data-card accent-sky">
         <text class="data-label">湿度</text>
-        <text class="data-value">{{ realTimeData.humidity }}</text>
+        <text class="data-value">{{ displayData.humidity }}</text>
         <text class="data-unit">%</text>
-        <text class="data-status" :class="humidityStatusClass">{{ humidityStatusText }}</text>
+        <StatusTag class="data-status" :label="humidityStatusText" :type="humidityStatusClass" />
       </view>
       <view class="data-card accent-peach">
         <text class="data-label">压力</text>
-        <text class="data-value">{{ realTimeData.pressure }}</text>
+        <text class="data-value">{{ displayData.pressure }}</text>
         <text class="data-unit">kPa</text>
-        <text class="data-status" :class="pressureStatusClass">{{ pressureStatusText }}</text>
+        <StatusTag class="data-status" :label="pressureStatusText" :type="pressureStatusClass" />
       </view>
     </view>
 
-    <view class="chart-card">
+    <view class="chart-card motion-fade delay-3">
       <view class="section-head">
         <view>
           <text class="section-title">数据趋势</text>
-          <text class="section-desc">观察过去 24 小时的监测变化曲线</text>
+          <text class="section-desc">最近读数 · 约 20 秒自动同步</text>
         </view>
       </view>
       <view class="chart-container">
         <view class="chart-grid"></view>
-        <view class="chart-line chart-line-main"></view>
-        <view class="chart-line chart-line-sub"></view>
-        <view class="chart-caption">
-          <text class="chart-placeholder-text">趋势图占位</text>
-          <text class="chart-placeholder-subtext">可后续接入真实图表组件</text>
+        <view v-if="trendSeries.length" class="trend-line-wrap">
+          <view
+            v-for="(seg, i) in trendLineSegments"
+            :key="`seg-${i}`"
+            class="trend-seg"
+            :style="seg.style"
+          ></view>
+          <view
+            v-for="(pt, i) in trendLinePoints"
+            :key="`pt-${i}`"
+            class="trend-point"
+            :style="{ left: pt.x + '%', top: pt.y + '%' }"
+          >
+            <text class="trend-dot"></text>
+            <text class="trend-lab">{{ pt.short }}</text>
+          </view>
+        </view>
+        <view v-else class="chart-caption">
+          <text class="chart-placeholder-text">暂无趋势数据</text>
         </view>
       </view>
     </view>
 
-    <view class="device-card">
+    <view class="device-card motion-fade delay-4">
       <view class="section-head">
         <view>
           <text class="section-title">设备状态</text>
@@ -74,7 +87,7 @@
       </view>
     </view>
 
-    <view class="action-buttons">
+    <view class="action-buttons motion-fade delay-5">
       <button class="btn-primary" @click="startMonitoring">开始监控</button>
       <button class="btn-secondary" @click="stopMonitoring">停止监控</button>
     </view>
@@ -83,11 +96,16 @@
 
 <script>
 import { request } from '../../utils/api';
+import StatusTag from '../../components/StatusTag.vue';
 
 export default {
+  components: {
+    StatusTag,
+  },
   data() {
     return {
       realTimeData: { vocs: 12.5, temperature: 25.3, humidity: 45, pressure: 101.3 },
+      displayData: { vocs: 12.5, temperature: 25.3, humidity: 45, pressure: 101.3 },
       deviceInfo: {
         deviceId: 'DEV-001',
         deviceName: '废气监测设备 1',
@@ -96,10 +114,30 @@ export default {
         ipAddress: '192.168.1.100',
         firmwareVersion: 'v1.0.0'
       },
-      isMonitoring: true
+      isMonitoring: true,
+      trendSeries: [],
+      trendMax: 1,
+      trendMin: 0,
+      trendPlotSize: { w: 1, h: 1 },
+      pollTimer: null,
+      pollMs: 20000,
+      motionReady: false,
     };
   },
-  onShow() { this.loadRealtimeData(); },
+  onShow() {
+    this.motionReady = false;
+    this.$nextTick(() => {
+      this.motionReady = true;
+    });
+    this.loadRealtimeData();
+    this.startPoll();
+  },
+  onHide() {
+    this.stopPoll();
+  },
+  onUnload() {
+    this.stopPoll();
+  },
   computed: {
     vocsStatusClass() { if (this.realTimeData.vocs > 50) return 'error'; if (this.realTimeData.vocs > 20) return 'warning'; return 'normal'; },
     vocsStatusText() { if (this.realTimeData.vocs > 50) return '超标'; if (this.realTimeData.vocs > 20) return '警告'; return '正常'; },
@@ -108,9 +146,99 @@ export default {
     humidityStatusClass() { if (this.realTimeData.humidity > 90 || this.realTimeData.humidity < 20) return 'error'; if (this.realTimeData.humidity > 80 || this.realTimeData.humidity < 30) return 'warning'; return 'normal'; },
     humidityStatusText() { if (this.realTimeData.humidity > 90 || this.realTimeData.humidity < 20) return '异常'; if (this.realTimeData.humidity > 80 || this.realTimeData.humidity < 30) return '警告'; return '正常'; },
     pressureStatusClass() { if (this.realTimeData.pressure > 110 || this.realTimeData.pressure < 90) return 'error'; if (this.realTimeData.pressure > 105 || this.realTimeData.pressure < 95) return 'warning'; return 'normal'; },
-    pressureStatusText() { if (this.realTimeData.pressure > 110 || this.realTimeData.pressure < 90) return '异常'; if (this.realTimeData.pressure > 105 || this.realTimeData.pressure < 95) return '警告'; return '正常'; }
+    pressureStatusText() { if (this.realTimeData.pressure > 110 || this.realTimeData.pressure < 90) return '异常'; if (this.realTimeData.pressure > 105 || this.realTimeData.pressure < 95) return '警告'; return '正常'; },
+    trendLinePoints() {
+      const list = this.trendSeries || [];
+      if (!list.length) return [];
+      const max = this.trendMax;
+      const min = this.trendMin;
+      const span = Math.max(1, max - min);
+      const n = list.length;
+      return list.map((item, idx) => {
+        const x = n === 1 ? 50 : Math.round((idx * 100) / (n - 1));
+        const norm = (Number(item.value || 0) - min) / span;
+        const y = Math.round((1 - Math.max(0, Math.min(1, norm))) * 82) + 8;
+        return { ...item, x, y };
+      });
+    },
+    trendLineSegments() {
+      const points = this.trendLinePoints;
+      if (points.length < 2) return [];
+      const result = [];
+      const w = Math.max(1, this.trendPlotSize.w || 1);
+      const h = Math.max(1, this.trendPlotSize.h || 1);
+      for (let i = 0; i < points.length - 1; i += 1) {
+        const p1 = points[i];
+        const p2 = points[i + 1];
+        const dxPct = p2.x - p1.x;
+        const dyPct = p2.y - p1.y;
+        const dxPx = (dxPct / 100) * w;
+        const dyPx = (dyPct / 100) * h;
+        const widthPct = (Math.sqrt(dxPx * dxPx + dyPx * dyPx) / w) * 100;
+        const angle = Math.atan2(dyPx, dxPx) * (180 / Math.PI);
+        result.push({
+          style: {
+            left: `${p1.x}%`,
+            top: `${p1.y}%`,
+            width: `${widthPct}%`,
+            transform: `translateY(-50%) rotate(${angle}deg)`,
+          },
+        });
+      }
+      return result;
+    },
   },
   methods: {
+    animateNumber(fromValue, toValue, setValue, duration = 420) {
+      const from = Number(fromValue || 0);
+      const to = Number(toValue || 0);
+      if (!Number.isFinite(to)) {
+        setValue(0);
+        return;
+      }
+      const delta = to - from;
+      if (Math.abs(delta) < 0.01) {
+        setValue(Number(to.toFixed(1)));
+        return;
+      }
+      const start = Date.now();
+      const timer = setInterval(() => {
+        const progress = Math.min(1, (Date.now() - start) / duration);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        const next = from + delta * eased;
+        setValue(Number(next.toFixed(1)));
+        if (progress >= 1) {
+          clearInterval(timer);
+          setValue(Number(to.toFixed(1)));
+        }
+      }, 16);
+    },
+    animateMetrics() {
+      this.animateNumber(this.displayData.vocs, this.realTimeData.vocs, (v) => {
+        this.displayData.vocs = Number(v.toFixed(1));
+      });
+      this.animateNumber(this.displayData.temperature, this.realTimeData.temperature, (v) => {
+        this.displayData.temperature = Number(v.toFixed(1));
+      });
+      this.animateNumber(this.displayData.humidity, this.realTimeData.humidity, (v) => {
+        this.displayData.humidity = Math.round(v);
+      });
+      this.animateNumber(this.displayData.pressure, this.realTimeData.pressure, (v) => {
+        this.displayData.pressure = Number(v.toFixed(1));
+      });
+    },
+    startPoll() {
+      this.stopPoll();
+      this.pollTimer = setInterval(() => {
+        this.loadRealtimeData();
+      }, this.pollMs);
+    },
+    stopPoll() {
+      if (this.pollTimer) {
+        clearInterval(this.pollTimer);
+        this.pollTimer = null;
+      }
+    },
     async loadRealtimeData() {
       try {
         const res = await request({ url: '/monitor/realtime' });
@@ -122,19 +250,44 @@ export default {
               humidity: res.data.real_time_data.humidity,
               pressure: res.data.real_time_data.pressure
             };
+            this.animateMetrics();
           }
           if (res.data.device_info) this.deviceInfo = res.data.device_info;
+          const trend = res.data.trend || [];
+          const vals = trend.map((t) => t.vocs || 0);
+          this.trendMax = Math.max(1, ...vals);
+          this.trendMin = Math.min(...vals, this.trendMax);
+          const tail = trend.slice(-12);
+          this.trendSeries = tail.map((t) => ({
+            short: (t.time || '').slice(-5) || '—',
+            value: Number(t.vocs || 0),
+          }));
+          this.$nextTick(() => this.measureTrendPlot());
         }
       } catch (error) {
         uni.showToast({ title: '监控数据加载失败', icon: 'none' });
       }
+    },
+    measureTrendPlot() {
+      const q = uni.createSelectorQuery().in(this);
+      q.select('.trend-line-wrap').boundingClientRect((rect) => {
+        if (!rect) return;
+        this.trendPlotSize = { w: rect.width || 1, h: rect.height || 1 };
+      }).exec();
     },
     async refreshData() {
       await this.loadRealtimeData();
       uni.showToast({ title: '数据已刷新', duration: 1000 });
     },
     exportData() {
-      uni.showToast({ title: '数据已导出', duration: 1000 });
+      uni.showModal({
+        title: '导出说明',
+        content: '实时监控原始记录已在“巡检与处置”页提供导出入口，是否前往？',
+        success: (res) => {
+          if (!res.confirm) return;
+          uni.navigateTo({ url: '/pages/records/index?tab=disposal' });
+        },
+      });
     },
     async startMonitoring() {
       try {
@@ -167,43 +320,41 @@ export default {
 .monitor-hero {
   display: flex;
   justify-content: space-between;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 20rpx;
   padding: 30rpx;
   border-radius: 30rpx;
   background: linear-gradient(135deg, #ffffff 0%, #f4efff 100%);
   box-shadow: 0 16rpx 40rpx rgba(71, 45, 143, 0.08);
 }
-.hero-kicker {
-  display: inline-block;
-  font-size: 18rpx;
-  color: #7b61ff;
-  letter-spacing: 2rpx;
-  font-weight: 700;
-}
+.hero-text { flex: 1; min-width: 0; }
 .page-title {
   display: block;
-  margin-top: 14rpx;
   font-size: 42rpx;
   font-weight: 800;
   color: #2b2156;
+  line-height: 1.2;
+  word-break: break-word;
 }
 .page-subtitle {
   display: block;
   margin-top: 10rpx;
-  font-size: 21rpx;
-  line-height: 1.6;
+  font-size: 22rpx;
+  line-height: 1.45;
   color: #8378a1;
+  word-break: break-word;
 }
-.header-actions { display: flex; gap: 12rpx; }
+.header-actions { display: flex; gap: 12rpx; flex-shrink: 0; }
 .icon-btn {
   width: 84rpx;
   height: 84rpx;
+  padding: 0;
   border-radius: 24rpx;
   background: #f4efff;
   color: #7b61ff;
   font-size: 30rpx;
 }
+.icon-btn:active { transform: scale(0.96); background:#ece3ff; }
 .icon-btn::after { border: none; }
 .data-cards {
   display: grid;
@@ -239,16 +390,10 @@ export default {
   color: #9a8fb2;
 }
 .data-status {
-  display: inline-block;
+  display: inline-flex;
   margin-top: 14rpx;
-  padding: 8rpx 14rpx;
-  border-radius: 999rpx;
-  font-size: 18rpx;
-  font-weight: 700;
+  padding: 0;
 }
-.data-status.normal { background: #efeaff; color: #7b61ff; }
-.data-status.warning { background: #fff5df; color: #d48618; }
-.data-status.error { background: #ffe9ee; color: #dd5175; }
 .chart-card,
 .device-card {
   margin-top: 22rpx;
@@ -307,6 +452,36 @@ export default {
   background: linear-gradient(90deg, #88d3ff 0%, #7b61ff 100%);
   transform: rotate(5deg);
 }
+.trend-line-wrap {
+  position: absolute;
+  left: 24rpx;
+  right: 24rpx;
+  bottom: 24rpx;
+  top: 24rpx;
+}
+.trend-seg {
+  position: absolute;
+  height: 4rpx;
+  transform-origin: left center;
+  background: linear-gradient(90deg, #7b61ff 0%, #a38eff 100%);
+  border-radius: 999rpx;
+}
+.trend-point {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.trend-dot {
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background: #7b61ff;
+  border: 3rpx solid #fff;
+  box-shadow: 0 0 0 2rpx rgba(123, 97, 255, 0.2);
+}
+.trend-lab { font-size: 14rpx; color: #9a8fb2; margin-top: 8rpx; }
 .chart-caption {
   position: absolute;
   left: 0;
@@ -349,6 +524,7 @@ export default {
   border-radius: 22rpx;
   background: #faf8ff;
 }
+.status-item:active { transform: scale(0.995); background:#f4efff; }
 .status-label {
   font-size: 20rpx;
   color: #9388ae;
@@ -367,9 +543,10 @@ export default {
 .btn-primary,
 .btn-secondary {
   flex: 1;
-  height: 96rpx;
+  height: 88rpx;
+  padding: 0 20rpx;
   border-radius: 22rpx;
-  font-size: 23rpx;
+  font-size: 28rpx;
   font-weight: 700;
 }
 .btn-primary {
@@ -384,4 +561,11 @@ export default {
 }
 .btn-primary::after,
 .btn-secondary::after { border: none; }
+.motion-fade { opacity: 0; transform: translateY(12rpx); transition: opacity var(--wg-motion-slow) var(--wg-ease-standard), transform var(--wg-motion-slow) var(--wg-ease-standard); }
+.monitor-page.motion-ready .motion-fade { opacity: 1; transform: translateY(0); }
+.delay-1 { transition-delay: .02s; }
+.delay-2 { transition-delay: .08s; }
+.delay-3 { transition-delay: .14s; }
+.delay-4 { transition-delay: .2s; }
+.delay-5 { transition-delay: .26s; }
 </style>

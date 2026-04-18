@@ -9,7 +9,7 @@
     {
       "path": "pages/index/index",
       "style": {
-        "navigationBarTitleText": "首页"
+        "navigationBarTitleText": "一线工作台"
       }
     },
     {
@@ -45,7 +45,7 @@
     {
       "path": "pages/records/index",
       "style": {
-        "navigationBarTitleText": "处置记录"
+        "navigationBarTitleText": "巡检与处置"
       }
     },
     {

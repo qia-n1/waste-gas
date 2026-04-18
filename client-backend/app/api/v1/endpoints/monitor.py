@@ -21,7 +21,7 @@ def _status(value: float, warning_low: float, warning_high: float, err_low: floa
 async def get_realtime_data(db: AsyncSession = Depends(get_db)) -> dict:
     latest = await db.scalar(select(SensorReading).order_by(desc(SensorReading.recorded_at)).limit(1))
     device = await db.scalar(select(DeviceInfo).where(DeviceInfo.device_id == 'DEV-001').limit(1))
-    recent_rows = (await db.scalars(select(SensorReading).order_by(desc(SensorReading.recorded_at)).limit(24))).all()
+    recent_rows = (await db.scalars(select(SensorReading).order_by(desc(SensorReading.recorded_at)).limit(60))).all()
 
     trend = [
         {
@@ -72,12 +72,9 @@ async def get_map_points(
     username: str = Depends(get_current_username),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    zones = (await db.scalars(select(AreaZone).where(AreaZone.manager_username == username).order_by(AreaZone.id.asc()))).all()
-
-    if not zones:
-        zones = (await db.scalars(select(AreaZone).order_by(AreaZone.id.asc()).limit(2))).all()
-
-    area_names = [item.name for item in zones]
+    zones = (await db.scalars(select(AreaZone).order_by(AreaZone.id.asc()))).all()
+    own_area_names = {item.name for item in zones if item.manager_username == username}
+    area_names = list(own_area_names)
     points: list[AreaSourcePoint] = []
     if area_names:
         points = (
@@ -118,6 +115,7 @@ async def get_map_points(
                 'alertCount': zone.alert_count,
                 'avgVocs': round(zone.avg_vocs, 2),
                 'level': level,
+                'canView': zone.manager_username == username,
             }
         )
 
@@ -139,6 +137,8 @@ async def get_map_points(
 
     if not response_points:
         for area in areas:
+            if not area['canView']:
+                continue
             response_points.append(
                 {
                     'id': f"area-{area['id']}",
@@ -161,6 +161,7 @@ async def get_map_points(
             'areas': areas,
             'points': response_points,
             'nearestAlertId': nearest_alert['id'] if nearest_alert else None,
+            'ownedAreaNames': area_names,
         },
     }
 

@@ -1,6 +1,8 @@
-const DEFAULT_BASE_URL = 'http://localhost:18002/api/v1';
+const DEFAULT_BASE_URL = 'http://localhost:18003/api/v1';
 const AUTH_TOKEN_KEY = 'authToken';
 const AUTH_USER_KEY = 'authUser';
+const API_BASE_URL_KEY = 'apiBaseUrl';
+const API_BASE_URL_RESET_FLAG = 'apiBaseUrlResetToLocalhostV1';
 
 function normalizeBaseUrl(baseUrl) {
   const value = String(baseUrl || '').trim();
@@ -10,9 +12,9 @@ function normalizeBaseUrl(baseUrl) {
 
   return value
     .replace('http://localhost:8002/api/v1', DEFAULT_BASE_URL)
-    .replace('http://127.0.0.1:8002/api/v1', 'http://127.0.0.1:18002/api/v1')
-    .replace('http://localhost:8002', 'http://localhost:18002')
-    .replace('http://127.0.0.1:8002', 'http://127.0.0.1:18002');
+    .replace('http://127.0.0.1:8002/api/v1', 'http://127.0.0.1:18003/api/v1')
+    .replace('http://localhost:8002', 'http://localhost:18003')
+    .replace('http://127.0.0.1:8002', 'http://127.0.0.1:18003');
 }
 
 function getStorageValue(key) {
@@ -68,7 +70,7 @@ function removeStorageValue(key) {
 export function getBaseUrl() {
   try {
     if (typeof uni !== 'undefined' && typeof uni.getStorageSync === 'function') {
-      const custom = uni.getStorageSync('apiBaseUrl');
+      const custom = uni.getStorageSync(API_BASE_URL_KEY);
       return normalizeBaseUrl(custom || DEFAULT_BASE_URL);
     }
   } catch {
@@ -80,10 +82,24 @@ export function getBaseUrl() {
 export function setBaseUrl(baseUrl) {
   try {
     if (typeof uni !== 'undefined' && typeof uni.setStorageSync === 'function') {
-      uni.setStorageSync('apiBaseUrl', normalizeBaseUrl(baseUrl));
+      uni.setStorageSync(API_BASE_URL_KEY, normalizeBaseUrl(baseUrl));
     }
   } catch {
     // Ignore storage failures in constrained environments
+  }
+}
+
+export function resetBaseUrlToDefaultOnce() {
+  try {
+    if (typeof uni === 'undefined' || typeof uni.getStorageSync !== 'function') return false;
+    const hasReset = uni.getStorageSync(API_BASE_URL_RESET_FLAG);
+    if (hasReset) return false;
+    uni.setStorageSync(API_BASE_URL_KEY, DEFAULT_BASE_URL);
+    uni.removeStorageSync('lanApiBaseUrl');
+    uni.setStorageSync(API_BASE_URL_RESET_FLAG, '1');
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -133,14 +149,12 @@ export function request(options) {
 
   return new Promise((resolve, reject) => {
     const finalUrl = `${getBaseUrl()}${url}`;
-    console.log('request start', { url: finalUrl, method, data });
     uni.request({
       url: finalUrl,
       method,
       data,
       header: requestHeader,
       success: (res) => {
-        console.log('request success', { url: finalUrl, statusCode: res.statusCode, data: res.data });
         if (res.statusCode === 401) {
           clearAuthState();
           if (typeof uni.redirectTo === 'function') {
@@ -167,7 +181,6 @@ export function request(options) {
         reject(new Error(message));
       },
       fail: (err) => {
-        console.error('request fail', { url: finalUrl, err });
         reject(err);
       }
     });

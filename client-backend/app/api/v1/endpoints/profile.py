@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -20,6 +22,11 @@ class ProfileUpdateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=64)
     email: str = Field(min_length=3, max_length=128)
     phone: str = Field(min_length=6, max_length=32)
+
+
+class InspectionCreateRequest(BaseModel):
+    area_name: str = Field(min_length=1, max_length=64)
+    summary: str = Field(min_length=1, max_length=255)
 
 
 async def _get_profile(db: AsyncSession, username: str) -> UserProfile:
@@ -149,4 +156,87 @@ async def get_inspections(
             }
             for row in rows
         ],
+    }
+
+
+@router.get('/monthly-summary')
+async def get_monthly_summary(
+    username: str = Depends(get_current_username),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    now = datetime.now().replace(second=0, microsecond=0)
+    month_start = now.replace(day=1, hour=0, minute=0)
+    next_month = (month_start + timedelta(days=32)).replace(day=1)
+
+    disposal_rows = (
+        await db.scalars(
+            select(DisposalRecord).where(
+                DisposalRecord.username == username,
+                DisposalRecord.created_at >= month_start,
+                DisposalRecord.created_at < next_month,
+            )
+        )
+    ).all()
+    inspection_rows = (
+        await db.scalars(
+            select(InspectionRecord).where(
+                InspectionRecord.username == username,
+                InspectionRecord.created_at >= month_start,
+                InspectionRecord.created_at < next_month,
+            )
+        )
+    ).all()
+
+    resolved_count = sum(1 for row in disposal_rows if '结案' in (row.result or '') or row.status == '已结案')
+    active_days = {
+        row.created_at.strftime('%Y-%m-%d')
+        for row in [*disposal_rows, *inspection_rows]
+    }
+    last_inspection_at = max((row.created_at for row in inspection_rows), default=None)
+
+    highlights = [
+        f"本月提交处置 {len(disposal_rows)} 次",
+        f"本月巡检 {len(inspection_rows)} 次，活跃 {len(active_days)} 天",
+        f"已结案相关处置 {resolved_count} 次",
+    ]
+
+    return {
+        'code': 200,
+        'data': {
+            'month': month_start.strftime('%Y-%m'),
+            'disposalCount': len(disposal_rows),
+            'inspectionCount': len(inspection_rows),
+            'activeDays': len(active_days),
+            'resolvedCount': resolved_count,
+            'lastInspectionAt': last_inspection_at.strftime('%Y-%m-%d %H:%M') if last_inspection_at else '暂无',
+            'highlights': highlights,
+        },
+    }
+
+
+@router.post('/inspections')
+async def create_inspection(
+    payload: InspectionCreateRequest,
+    username: str = Depends(get_current_username),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    now = datetime.now().replace(second=0, microsecond=0)
+    row = InspectionRecord(
+        username=username,
+        area_name=payload.area_name.strip(),
+        summary=payload.summary.strip(),
+        created_at=now,
+    )
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    return {
+        'code': 200,
+        'message': '巡检记录已保存',
+        'data': {
+            'id': row.id,
+            'areaName': row.area_name,
+            'summary': row.summary,
+            'createdAt': row.created_at.strftime('%Y-%m-%d %H:%M'),
+        },
     }
