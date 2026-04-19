@@ -230,3 +230,29 @@ uniapp-client/node_modules/
 dist/
 build/
 
+
+# ========== RAG 项目专用屏蔽 ==========
+# 向量库文件夹（你的 vector_db）
+rag/vector_db/
+vector_db/
+
+# Python 缓存（你的 __pycache__）
+__pycache__/
+*.pyc
+*.pyo
+
+# 大模型文件（如果以后放这里）
+*.safetensors
+*.bin
+*.gguf
+*.pt
+*.pth
+backend/models/
+model/
+backend/rag/vector_db/
+admin/backend/rag/models/
+admin/backend/rag/vector_db/
+# 其他临时文件
+*.tmp
+*.log
+.env
