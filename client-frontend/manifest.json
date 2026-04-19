@@ -1,0 +1,37 @@
+{
+    "name" : "废气监测系统",
+    "appid" : "__UNI__18F2BC1",
+    "description" : "废气监测系统 UniApp 客户端",
+    "versionName" : "1.0.0",
+    "versionCode" : "100",
+    "transformPx" : true,
+    "uni-app" : {
+        "usingComponents" : true
+    },
+    "mp-weixin" : {
+        "appid" : "touristappid",
+        "setting" : {
+            "urlCheck" : false
+        },
+        "usingComponents" : true,
+        "renderer" : "webview"
+    },
+    "h5" : {
+        "router" : {
+            "mode" : "hash"
+        },
+        "title" : "废气监测系统",
+        "domain" : "",
+        "devServer" : {
+            "port" : 8080,
+            "proxy" : {
+                "/api" : {
+                    "target" : "http://localhost:18003",
+                    "changeOrigin" : true,
+                    "secure" : false
+                }
+            }
+        }
+    },
+    "vueVersion" : "3"
+}
