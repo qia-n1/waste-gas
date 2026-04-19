@@ -250,7 +250,7 @@ __pycache__/
 backend/models/
 model/
 backend/rag/vector_db/
-admin/backend/models/
+admin/backend/rag/models/
 admin/backend/rag/vector_db/
 # 其他临时文件
 *.tmp
