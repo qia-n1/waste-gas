@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.core.security import create_access_token
@@ -15,7 +15,21 @@ class TokenResponse(BaseModel):
     token_type: str = 'bearer'
 
 
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
 @router.post('/token', response_model=TokenResponse)
 async def issue_token(payload: TokenRequest) -> TokenResponse:
     token = create_access_token(subject=payload.username)
     return TokenResponse(access_token=token)
+
+
+@router.post("/login")
+async def login(request: LoginRequest):
+    # Mock authentication logic
+    if request.username == "admin" and request.password == "password":
+        token = create_access_token({"sub": request.username})
+        return {"access_token": token, "token_type": "bearer"}
+    raise HTTPException(status_code=400, detail="Invalid username or password")
