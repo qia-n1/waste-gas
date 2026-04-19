@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Tuple, Union
 
 
 SENSOR_COLUMNS = [
@@ -89,7 +92,7 @@ class ModelConfig:
     diffusion_conditioning_layers: int = 2
     diffusion_prob_sparse_topk: int = 16
     diffusion_temporal_embed_dim: int = 64
-    diffusion_time_feature_indices: tuple[int, int, int, int] | tuple[()] = ()
+    diffusion_time_feature_indices: Union[Tuple[int, int, int, int], Tuple[()]] = ()
     diffusion_use_weekend_gate: bool = True
     diffusion_denoiser_type: str = "mamba"
     diffusion_resnet_blocks: int = 4

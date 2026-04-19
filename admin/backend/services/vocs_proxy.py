@@ -580,7 +580,15 @@ async def get_anomaly_heatmap(days: int = 7) -> dict[str, Any]:
 
 
 async def get_alerts(limit: int = 30, search: str = "", level: str = "") -> dict[str, Any]:
+    # Lazy import to avoid circular import (watchdog imports vocs_proxy)
+    from services.device_watchdog import watchdog
+
     raw_alerts = await fetch_alerts(limit=max(limit, 50))
+    # Merge in admin-side watchdog alerts (device offline / recovered) so they
+    # appear in the AlarmCenter alongside upstream VOCs alerts.
+    watchdog_alerts = watchdog.list_alerts()
+    if watchdog_alerts:
+        raw_alerts = watchdog_alerts + list(raw_alerts)
     if not raw_alerts:
         history = _load_csv_rows(limit=48)
         prediction = _build_fallback_prediction(history)
@@ -630,6 +638,17 @@ async def get_alerts(limit: int = 30, search: str = "", level: str = "") -> dict
 
 
 async def acknowledge_alert(alert_id: str) -> dict[str, Any]:
+    # Watchdog-generated alerts live only in admin memory — handle locally.
+    if alert_id.startswith("WATCHDOG-"):
+        from services.device_watchdog import watchdog
+
+        for alert in watchdog.list_alerts():
+            if alert.get("alert_id") == alert_id:
+                alert["acknowledged"] = True
+                alert["status"] = "已处理"
+                break
+        return {"success": True, "message": "设备状态告警已确认", "alert_id": alert_id}
+
     try:
         async with httpx.AsyncClient(
             base_url=settings.vocs_base_url, timeout=settings.request_timeout
