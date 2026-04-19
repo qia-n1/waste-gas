@@ -1,0 +1,27 @@
+{
+  "name": "uniapp-client",
+  "version": "1.0.0",
+  "description": "废气监测系统 UniApp 客户端",
+  "main": "main.js",
+  "scripts": {
+    "dev": "cross-env UNI_INPUT_DIR=. uni",
+    "dev:h5": "cross-env UNI_INPUT_DIR=. uni",
+    "dev:mp-weixin": "cross-env UNI_INPUT_DIR=. uni -p mp-weixin",
+    "build": "cross-env UNI_INPUT_DIR=. uni build",
+    "build:h5": "cross-env UNI_INPUT_DIR=. uni build",
+    "build:mp-weixin": "cross-env UNI_INPUT_DIR=. uni build -p mp-weixin",
+    "preview": "vite preview --host 0.0.0.0 --port 4175"
+  },
+  "dependencies": {
+    "@dcloudio/uni-components": "^3.0.0-5000720260410001",
+    "vue": "^3.4.21"
+  },
+  "devDependencies": {
+    "@dcloudio/uni-helper-json": "^1.0.11",
+    "@dcloudio/uni-mp-weixin": "^3.0.0-5000720260410001",
+    "@dcloudio/vite-plugin-uni": "^3.0.0-5000720260410001",
+    "@vitejs/plugin-vue": "^5.2.4",
+    "cross-env": "^7.0.3",
+    "vite": "^5.2.8"
+  }
+}

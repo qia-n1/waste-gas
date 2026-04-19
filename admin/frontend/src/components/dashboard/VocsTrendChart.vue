@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import dayjs from "dayjs";
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import VChart from "vue-echarts";
 
 import type { DashboardTrend } from "@/types/dashboard";
@@ -15,24 +15,32 @@ const props = defineProps<{
   trend: DashboardTrend;
 }>();
 
-const initialRange = () => {
+const computeRange = (): [Date, Date] => {
   const actual = props.trend.actualSeries;
   const first = actual[0]?.timestamp;
   const lastForecast = props.trend.forecastSeries[props.trend.forecastSeries.length - 1];
   const lastActual = actual[actual.length - 1];
-  const last =
-    lastForecast?.timestamp ??
-    lastActual?.timestamp ??
-    new Date().toISOString();
-
+  const last = lastForecast?.timestamp ?? lastActual?.timestamp ?? new Date().toISOString();
   return [
     first ? dayjs(first).toDate() : dayjs().subtract(1, "day").toDate(),
-    last ? dayjs(last).toDate() : dayjs().add(1, "day").toDate(),
-  ] as [Date, Date];
+    last ? dayjs(last).add(1, "day").toDate() : dayjs().add(1, "day").toDate(),
+  ];
 };
 
-const range = ref<[Date, Date]>(initialRange());
+const range = ref<[Date, Date]>(computeRange());
 const showForecast = ref(true);
+let rangeInitialized = false;
+
+watch(
+  () => props.trend.actualSeries,
+  (series) => {
+    if (series.length > 0 && !rangeInitialized) {
+      range.value = computeRange();
+      rangeInitialized = true;
+    }
+  },
+  { immediate: true },
+);
 
 const mergedSeries = computed<AxisSeriesPoint[]>(() => {
   const actualMap = new Map(
@@ -125,14 +133,16 @@ const option = computed(() => ({
   },
   yAxis: {
     type: "value",
-    splitNumber: 3,
-    minInterval: 20,
+    splitNumber: 4,
+    minInterval: 10,
+    min: 0,
     splitLine: { lineStyle: { color: "rgba(120, 146, 209, 0.1)" } },
     axisLine: { show: false },
     axisTick: { show: false },
     axisLabel: {
       color: "#8ea3c9",
       fontSize: 10,
+      formatter: (v: number) => `${v}`,
     },
   },
   series: [
@@ -245,10 +255,10 @@ const option = computed(() => ({
 
 <style scoped>
 .trend-card {
-  height: 208px;
-  min-height: 208px;
-  max-height: 208px;
-  flex: 0 0 208px;
+  height: 380px;
+  min-height: 380px;
+  max-height: 380px;
+  flex: 0 0 380px;
   padding: 14px 16px 12px;
 }
 
@@ -284,7 +294,7 @@ const option = computed(() => ({
 }
 
 .trend-chart {
+  flex: 1;
   min-height: 0;
-  height: 118px;
 }
 </style>
