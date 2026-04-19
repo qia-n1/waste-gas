@@ -296,11 +296,10 @@ class ImprovedSeq2SeqModel(nn.Module):
             decoder_input_concat = torch.cat((decoder_input, context.unsqueeze(1)), dim=2)
             decoder_output, (hidden, cell) = self.decoder(decoder_input_concat, (hidden, cell))
 
-            prediction = self.fc_out(decoder_output)
-
             gate = torch.sigmoid(self.gate(torch.cat([decoder_output, context.unsqueeze(1)], dim=2)))
-            decoder_output = gate * decoder_output + (1 - gate) * context.unsqueeze(1)
-
+            fused_output = gate * decoder_output + (1 - gate) * context.unsqueeze(1)
+            prediction = self.fc_out(fused_output)
+            
             outputs.append(prediction)
 
             if use_teacher_forcing:
