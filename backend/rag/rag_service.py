@@ -3,7 +3,7 @@ import json
 import os
 from dotenv import load_dotenv
 from openai import OpenAI
-from simple_vector_db import SimpleVectorDB  # <-- 导入我们的新向量库
+from simple_vector_db import SimpleVectorDB
 
 # ==============================
 # 0. 加载环境配置
@@ -15,7 +15,6 @@ API_KEY = os.getenv("LLM_API_KEY", "")
 API_BASE = os.getenv("LLM_API_BASE", "https://api.deepseek.com")
 MODEL_NAME = os.getenv("LLM_MODEL", "deepseek-chat")
 
-# 【修改点1】改用新向量库路径
 VECTOR_DB_PATH = "./vector_db/rto_spec.pkl"
 
 try:
@@ -36,7 +35,6 @@ except Exception as e:
     print(f"❌ 模型加载失败: {str(e)}")
     model = None
 
-# 【修改点2】加载新向量库
 print("\n🔗 正在连接本地向量库...")
 try:
     vector_db = SimpleVectorDB(VECTOR_DB_PATH)
@@ -46,13 +44,13 @@ except Exception as e:
     vector_db = None
 
 # ==============================
-# 2. 核心检索函数（已修改）
+# 2. 核心检索函数
 # ==============================
 def retrieve_docs(question, top_k=2):
     if vector_db is None:
         return ""
     try:
-        # 直接用我们的新查询方法
+        
         results = vector_db.query(question, top_k=top_k)
         return "\n".join([r["text"] for r in results])
     except Exception as e:
@@ -60,7 +58,7 @@ def retrieve_docs(question, top_k=2):
         return ""
 
 # ==============================
-# 【优化B】事实一致性检查（过滤AI乱说话）
+# 【优化】事实一致性检查
 # ==============================
 def clean_sop_steps(steps):
     cleaned = []
@@ -81,6 +79,12 @@ def get_warning_diagnose(vocs, shap_reason, shap_score):
     # 1. 语义检索
     query = f"VOCs浓度{vocs}超标，{shap_reason}的处理方案"
     context = retrieve_docs(query)
+
+    
+    print("=" * 80)
+    print("🔍 RAG 检索到的知识库内容：")
+    print(context if context else "⚠️ 未检索到内容，使用通用规范")
+    print("=" * 80)
 
     # 2. 系统提示
     system_prompt = (
