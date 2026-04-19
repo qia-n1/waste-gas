@@ -67,6 +67,7 @@ class Alert(Base):
     level: Mapped[str] = mapped_column(String(16), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    handled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     device_id: Mapped[str] = mapped_column(String(64), nullable=False)
     location: Mapped[str] = mapped_column(String(128), nullable=False)

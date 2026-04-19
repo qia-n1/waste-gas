@@ -1,6 +1,6 @@
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import inspect, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
@@ -22,9 +22,22 @@ from app.models.entities import (
 )
 
 
+def _ensure_wg_alerts_handled_at(sync_conn) -> None:
+    try:
+        cols = [c['name'] for c in inspect(sync_conn).get_columns('wg_alerts')]
+    except Exception:
+        return
+    if 'handled_at' not in cols:
+        dialect = sync_conn.dialect.name
+        # PostgreSQL 不支持 DATETIME；统一用各库可识别的时间类型。
+        col_type = 'TIMESTAMP' if dialect == 'postgresql' else 'DATETIME'
+        sync_conn.execute(text(f'ALTER TABLE wg_alerts ADD COLUMN handled_at {col_type}'))
+
+
 async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_ensure_wg_alerts_handled_at)
 
 
 async def seed_if_empty(session: AsyncSession) -> None:
@@ -78,16 +91,16 @@ async def seed_if_empty(session: AsyncSession) -> None:
     reading_exists = await session.scalar(select(SensorReading.id).limit(1))
     if not reading_exists:
         readings: list[SensorReading] = []
-        for i in range(24):
-            ts = now - timedelta(hours=23 - i)
+        for i in range(72):
+            ts = now - timedelta(hours=71 - i)
             readings.append(
                 SensorReading(
                     device_id='DEV-001',
                     recorded_at=ts,
-                    vocs=12.5 + (i % 5) * 4.3,
-                    temperature=24.0 + (i % 4) * 1.5,
-                    humidity=42 + (i % 6) * 3,
-                    pressure=100.5 + (i % 5) * 0.6,
+                    vocs=12.5 + (i % 7) * 3.8 + (i % 3) * 1.1,
+                    temperature=22.0 + (i % 5) * 1.8,
+                    humidity=38 + (i % 8) * 3.5,
+                    pressure=99.8 + (i % 6) * 0.55,
                 )
             )
         session.add_all(readings)
@@ -120,6 +133,7 @@ async def seed_if_empty(session: AsyncSession) -> None:
             level='medium',
             status='resolved',
             created_at=now - timedelta(hours=4),
+            handled_at=now - timedelta(days=3, hours=2),
             resolved_at=now - timedelta(hours=3, minutes=30),
             device_id='DEV-001',
             location='废气处理车间 A',

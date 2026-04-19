@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
+from app.core.security import get_current_username
 from app.models.entities import Alert, AreaSourcePoint, AreaZone, DeviceInfo, SensorReading
 
 router = APIRouter(prefix='/dashboard', tags=['dashboard'])
@@ -15,6 +16,28 @@ async def get_dashboard_overview(window: str = '24h', db: AsyncSession = Depends
     device = await db.scalar(select(DeviceInfo).where(DeviceInfo.device_id == 'DEV-001').limit(1))
     trend_rows = (await db.scalars(select(SensorReading).order_by(desc(SensorReading.recorded_at)).limit(24))).all()
     map_points = (await db.scalars(select(AreaSourcePoint).order_by(AreaSourcePoint.id.asc()))).all()
+    pending_dispatch = await db.scalar(select(func.count(Alert.id)).where(Alert.status == 'unresolved'))
+    in_progress = await db.scalar(
+        select(func.count(Alert.id)).where(or_(Alert.status == 'accepted', Alert.status == 'tracking'))
+    )
+
+    base_vocs = float(latest.vocs) if latest else 0.0
+    slope = 0.0
+    if len(trend_rows) >= 2:
+        newest, older = trend_rows[0], trend_rows[1]
+        slope = (float(newest.vocs) - float(older.vocs)) * 0.12
+
+    prediction_6h = []
+    for h in range(1, 7):
+        predicted = round(max(0.0, base_vocs + slope * h - h * 0.28), 2)
+        prediction_6h.append(
+            {
+                'label': f'+{h}h',
+                'predicted': predicted,
+                'upper': round(predicted * 1.12, 2),
+                'lower': round(max(0.0, predicted * 0.88), 2),
+            }
+        )
 
     return {
         'code': 200,
@@ -46,6 +69,11 @@ async def get_dashboard_overview(window: str = '24h', db: AsyncSession = Depends
                 {'time': row.recorded_at.strftime('%Y-%m-%d %H:%M'), 'vocs': round(row.vocs, 2)}
                 for row in reversed(trend_rows)
             ],
+            'prediction_6h': prediction_6h,
+            'workbench': {
+                'pendingDispatch': int(pending_dispatch or 0),
+                'inProgress': int(in_progress or 0),
+            },
             'mapPoints': [
                 {
                     'id': point.id,
@@ -64,10 +92,29 @@ async def get_dashboard_overview(window: str = '24h', db: AsyncSession = Depends
 
 
 @router.get('/my-area')
-async def get_my_area(username: str = 'admin', db: AsyncSession = Depends(get_db)) -> dict:
+async def get_my_area(
+    username: str = Depends(get_current_username),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
     zones = (await db.scalars(select(AreaZone).where(AreaZone.manager_username == username))).all()
-    sources = (await db.scalars(select(AreaSourcePoint).order_by(AreaSourcePoint.id.asc()))).all()
-    devices = (await db.scalars(select(DeviceInfo).order_by(DeviceInfo.id.asc()))).all()
+    area_names = [item.name for item in zones]
+    sources = []
+    devices = []
+    if area_names:
+        sources = (
+            await db.scalars(
+                select(AreaSourcePoint)
+                .where(AreaSourcePoint.area_name.in_(area_names))
+                .order_by(AreaSourcePoint.id.asc())
+            )
+        ).all()
+        devices = (
+            await db.scalars(
+                select(DeviceInfo)
+                .where(DeviceInfo.location.in_(area_names))
+                .order_by(DeviceInfo.id.asc())
+            )
+        ).all()
     trend_rows = (await db.scalars(select(SensorReading).order_by(desc(SensorReading.recorded_at)).limit(8))).all()
 
     return {

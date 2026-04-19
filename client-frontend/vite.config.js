@@ -1,22 +1,17 @@
-import { defineConfig } from 'vite'
-import vue from '@vitejs/plugin-vue'
+import { defineConfig } from 'vite';
+import uni from '@dcloudio/vite-plugin-uni';
 
 export default defineConfig({
-  plugins: [vue()],
-  define: {
-    __VUE_OPTIONS_API__: true,
-    __VUE_PROD_DEVTOOLS__: false,
-    __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: false,
-  },
+  plugins: [uni()],
   server: {
     port: 3005,
     host: '0.0.0.0',
     proxy: {
       '/api': {
-        target: 'http://localhost:18002',
+        target: 'http://localhost:18003',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, '/api/v1')
-      }
-    }
-  }
-})
+        rewrite: (path) => path.replace(/^\/api/, '/api/v1'),
+      },
+    },
+  },
+});

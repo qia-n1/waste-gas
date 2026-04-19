@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -32,6 +34,26 @@ async def rag_diagnose(
     ).all()
     history = [{'role': row.role, 'content': row.content} for row in history_rows]
     response = await rag_service.diagnose(payload.question, history)
+    now = datetime.now().replace(microsecond=0)
+    db.add(
+        AiConversation(
+            username=username,
+            session_id=payload.sessionId,
+            role='user',
+            content=payload.question,
+            created_at=now,
+        )
+    )
+    db.add(
+        AiConversation(
+            username=username,
+            session_id=payload.sessionId,
+            role='assistant',
+            content=(response.get('answer') or ''),
+            created_at=now,
+        )
+    )
+    await db.commit()
     return {
         'code': 200,
         'data': response,
