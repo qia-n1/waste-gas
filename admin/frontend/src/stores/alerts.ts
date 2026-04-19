@@ -44,6 +44,16 @@ export const useAlertsStore = defineStore("alerts", () => {
     diagnosis.value = data;
   };
 
+  /**
+   * Insert (or replace) an alert at the top of the list. Used by the admin
+   * SSE pipeline so that watchdog-emitted device alerts surface immediately
+   * in the AlarmCenter without waiting for the next 30s polling tick.
+   */
+  const pushAlert = (alert: AlertItem) => {
+    const filtered = alerts.value.filter((item) => item.alert_id !== alert.alert_id);
+    alerts.value = [alert, ...filtered].slice(0, 50);
+  };
+
   return {
     alerts,
     diagnosis,
@@ -53,5 +63,6 @@ export const useAlertsStore = defineStore("alerts", () => {
     fetchAlerts,
     acknowledgeAlert,
     loadDiagnosis,
+    pushAlert,
   };
 });

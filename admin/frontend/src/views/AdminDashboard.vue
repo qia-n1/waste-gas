@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElNotification } from "element-plus";
 
+import { createAdminSseConnection } from "@/api/adminSse";
 import { createVocsSseConnection } from "@/api/sse";
 import AlarmCenter from "@/components/dashboard/AlarmCenter.vue";
 import AnomalyHeatmap from "@/components/dashboard/AnomalyHeatmap.vue";
@@ -10,6 +11,7 @@ import ContinuousAlerts from "@/components/dashboard/ContinuousAlerts.vue";
 import DecisionSupport from "@/components/dashboard/DecisionSupport.vue";
 import EquipmentStatusChart from "@/components/dashboard/EquipmentStatusChart.vue";
 import FactoryScene from "@/components/dashboard/FactoryScene.vue";
+import TopContributorCharts from "@/components/dashboard/TopContributorCharts.vue";
 import VocsTrendChart from "@/components/dashboard/VocsTrendChart.vue";
 import DashboardLayout from "@/layouts/DashboardLayout.vue";
 import { useAlertsStore } from "@/stores/alerts";
@@ -39,6 +41,22 @@ const sse = createVocsSseConnection({
   },
   onStatusChange(connected) {
     dashboardStore.setConnected(connected);
+  },
+});
+
+// Admin-side SSE for watchdog (90s 设备掉线) alerts. Pushes straight into the
+// AlarmCenter and pops a toast so operators are notified immediately.
+const adminSse = createAdminSseConnection({
+  onDeviceAlert(alert) {
+    alertsStore.pushAlert(alert);
+    const isRecovery = alert.level === "info" || alert.status === "已恢复";
+    ElNotification({
+      title: isRecovery ? "设备通信已恢复" : "设备数据采集中断",
+      message: alert.message,
+      type: isRecovery ? "success" : "error",
+      duration: isRecovery ? 4000 : 0, // critical stays until dismissed
+      position: "top-right",
+    });
   },
 });
 
@@ -105,6 +123,7 @@ const handleLogout = async () => {
 onMounted(async () => {
   await loadData();
   sse.connect();
+  adminSse.connect();
   refreshTimer = window.setInterval(() => {
     void loadData();
   }, 30000);
@@ -112,6 +131,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   sse.disconnect();
+  adminSse.disconnect();
   if (refreshTimer !== null) {
     window.clearInterval(refreshTimer);
   }
@@ -128,6 +148,7 @@ onBeforeUnmount(() => {
     <template #left>
       <VocsTrendChart :trend="dashboardStore.overview.trend" />
       <EquipmentStatusChart :data="dashboardStore.equipmentStatus" :attribution="dashboardStore.attribution" />
+      <TopContributorCharts :items="dashboardStore.topContributorSeries" />
       <AnomalyHeatmap :data="dashboardStore.heatmap" />
     </template>
 

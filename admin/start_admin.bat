@@ -1,68 +1,82 @@
 @echo off
+setlocal
 chcp 65001 >nul
-title Smart Clean Park - Admin Dashboard Launcher
+title Smart Clean Park - Admin Launcher
 
-set "ROOT=%~dp0.."
 set "ADMIN=%~dp0"
+for %%I in ("%ADMIN%..") do set "ROOT=%%~fI"
+set "ENSEMBLE_DIR=%ROOT%\models\new_VOC\ensemble_docker"
+set "ADMIN_BACKEND_DIR=%ADMIN%backend"
+set "ADMIN_FRONTEND_DIR=%ADMIN%frontend"
+set "VOCS_SERVER=%ROOT%\vocs_server.py"
 
 echo ============================================================
-echo   智洁园区 - 废气综合管理平台  管理端启动器
+echo   Smart Clean Park - Admin Service Launcher
 echo ============================================================
 echo.
 
-REM ── 1. ensemble_docker (port 8000) — 可选 ──
-echo [1/4] 集成预测模型服务 (ensemble_docker:8000) ...
-cd /d "%ROOT%\models\new_VOC\ensemble_docker"
-if exist "docker-compose.yml" (
-    echo       检测到 docker-compose.yml，尝试 docker compose up ...
-    docker compose up -d 2>nul
+echo [1/4] Start ensemble_docker on port 8000...
+if exist "%ENSEMBLE_DIR%\docker-compose.yml" (
+    pushd "%ENSEMBLE_DIR%"
+    docker compose up -d >nul 2>nul
     if errorlevel 1 (
-        echo       Docker 不可用，尝试本地 uvicorn 启动 ...
-        start "Ensemble-8000" cmd /k "cd /d \"%ROOT%\models\new_VOC\ensemble_docker\" && python -m uvicorn app:app --host 0.0.0.0 --port 8000"
+        echo       docker compose failed. Fallback to local uvicorn.
+        start "Ensemble-8000" /D "%ENSEMBLE_DIR%" cmd /k "python -m uvicorn app:app --host 0.0.0.0 --port 8000"
     ) else (
-        echo       Docker 容器已启动
+        echo       docker compose up -d started successfully.
     )
+    popd
 ) else (
-    echo       未找到 docker-compose.yml，跳过
+    if exist "%ENSEMBLE_DIR%\app.py" (
+        echo       docker-compose.yml not found. Fallback to local uvicorn.
+        start "Ensemble-8000" /D "%ENSEMBLE_DIR%" cmd /k "python -m uvicorn app:app --host 0.0.0.0 --port 8000"
+    ) else (
+        echo       ensemble_docker directory not found. Skipped.
+    )
 )
 echo.
 
-REM ── 2. vocs_server (port 8001) — 可选 ──
-echo [2/4] VOCs 实时数据服务 (vocs_server:8001) ...
-if exist "%ROOT%\vocs_server.py" (
-    start "VOCs-Server-8001" cmd /k "cd /d \"%ROOT%\" && python vocs_server.py"
-    echo       vocs_server.py 已在新窗口启动
+echo [2/4] Start vocs_server on port 8001...
+if exist "%VOCS_SERVER%" (
+    start "VOCs-Server-8001" /D "%ROOT%" cmd /k "python vocs_server.py"
+    echo       vocs_server.py started in a new window.
 ) else (
-    echo       未找到 vocs_server.py，跳过（将使用 CSV fallback）
+    echo       vocs_server.py not found. Skipped.
 )
 echo.
 
-REM ── 3. admin backend (port 8003) ──
-echo [3/4] 管理端后端 (admin backend:8003) ...
-start "Admin-Backend-8003" cmd /k "cd /d \"%ADMIN%backend\" && python -m uvicorn main:app --host 0.0.0.0 --port 8003 --reload"
-echo       admin backend 已在新窗口启动
+echo [3/4] Start admin backend on port 8003...
+if exist "%ADMIN_BACKEND_DIR%\main.py" (
+    start "Admin-Backend-8003" /D "%ADMIN_BACKEND_DIR%" cmd /k "python -m uvicorn main:app --host 0.0.0.0 --port 8003 --reload"
+    echo       Admin backend started in a new window.
+) else (
+    echo       %ADMIN_BACKEND_DIR%\main.py not found. Skipped.
+)
 echo.
 
-REM ── 等待后端就绪 ──
-echo       等待后端启动 (3秒) ...
+echo       Wait 3 seconds for backend startup...
 timeout /t 3 /nobreak >nul
+echo.
 
-REM ── 4. admin frontend (port 3001) ──
-echo [4/4] 管理端前端 (admin frontend:3001) ...
-start "Admin-Frontend-3001" cmd /k "cd /d \"%ADMIN%frontend\" && npm run dev"
-echo       admin frontend 已在新窗口启动
+echo [4/4] Start admin frontend on port 3001...
+if exist "%ADMIN_FRONTEND_DIR%\package.json" (
+    start "Admin-Frontend-3001" /D "%ADMIN_FRONTEND_DIR%" cmd /k "npm run dev"
+    echo       Admin frontend started in a new window.
+) else (
+    echo       %ADMIN_FRONTEND_DIR%\package.json not found. Skipped.
+)
 echo.
 
 echo ============================================================
-echo   所有服务已启动！
+echo   Startup commands have been issued.
 echo.
-echo   前端地址:    http://localhost:3001
-echo   后端 API:    http://localhost:8003/docs
-echo   Ensemble:    http://localhost:8000/health
-echo   VOCs SSE:    http://localhost:8001/status
+echo   Frontend:      http://localhost:3001
+echo   Admin backend: http://localhost:8003/docs
+echo   Ensemble:      http://localhost:8000/health
+echo   VOCs SSE:      http://localhost:8001/status
 echo.
-echo   默认登录:    admin / admin123456
+echo   Note: Vite proxy should point /api to http://localhost:8003
 echo ============================================================
 echo.
-echo 按任意键关闭此窗口（各服务窗口独立运行）...
+echo Press any key to close this launcher window...
 pause >nul

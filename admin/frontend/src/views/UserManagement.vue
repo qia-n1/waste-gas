@@ -2,7 +2,26 @@
 import { computed, onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Plus, Search } from "@element-plus/icons-vue";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Calendar,
+  DArrowLeft,
+  DArrowRight,
+  Delete,
+  Download,
+  Edit,
+  Hide,
+  Key,
+  Medal,
+  Message,
+  Operation,
+  Plus,
+  Search,
+  Select,
+  User,
+  View,
+} from "@element-plus/icons-vue";
 
 import HeaderBar from "@/components/layout/HeaderBar.vue";
 import { createUser, fetchUserDetail, fetchUsers, resetUserPassword, toggleUserStatus, updateUser } from "@/api/users";
@@ -42,6 +61,9 @@ const filters = reactive({
   status: "",
 });
 
+const pageSize = ref(12);
+const currentPage = ref(1);
+
 const userForm = reactive<Required<UserFormPayload>>({
   username: "",
   display_name: "",
@@ -50,18 +72,18 @@ const userForm = reactive<Required<UserFormPayload>>({
   password: "",
 });
 
-const roleTagClassMap: Record<string, string> = {
-  SysAdmin: "role-sysadmin",
-  EnvAdmin: "role-envadmin",
-  Analyst: "role-analyst",
-  Operator: "role-operator",
-};
-
 const roleNameMap: Record<string, string> = {
   SysAdmin: "超级管理员",
   EnvAdmin: "环保监测员",
   Analyst: "数据分析师",
   Operator: "现场处置工",
+};
+
+const roleToneMap: Record<string, string> = {
+  SysAdmin: "tone-cyan",
+  EnvAdmin: "tone-lime",
+  Analyst: "tone-blue",
+  Operator: "tone-slate",
 };
 
 const statusLabel = (status: string) => (status === "enabled" ? "启用" : "禁用");
@@ -77,6 +99,45 @@ const filteredSummary = computed(() => {
     disabled: users.value.length - enabledCount,
   };
 });
+
+const totalPages = computed(() => Math.max(1, Math.ceil(users.value.length / pageSize.value)));
+
+const pagedUsers = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value;
+  return users.value.slice(start, start + pageSize.value);
+});
+
+const pageRangeLabel = computed(() => {
+  if (users.value.length === 0) {
+    return "0 条";
+  }
+  const start = (currentPage.value - 1) * pageSize.value + 1;
+  const end = Math.min(currentPage.value * pageSize.value, users.value.length);
+  return `${start}-${end} / 共 ${users.value.length} 条`;
+});
+
+const visiblePages = computed(() => {
+  const total = totalPages.value;
+  const current = currentPage.value;
+  const pages: (number | "gap")[] = [];
+  if (total <= 5) {
+    for (let i = 1; i <= total; i += 1) pages.push(i);
+    return pages;
+  }
+  pages.push(1);
+  if (current > 3) pages.push("gap");
+  const start = Math.max(2, current - 1);
+  const end = Math.min(total - 1, current + 1);
+  for (let i = start; i <= end; i += 1) pages.push(i);
+  if (current < total - 2) pages.push("gap");
+  pages.push(total);
+  return pages;
+});
+
+const goToPage = (page: number) => {
+  if (page < 1 || page > totalPages.value) return;
+  currentPage.value = page;
+};
 
 const resetForm = () => {
   userForm.username = "";
@@ -94,6 +155,7 @@ const loadUsers = async () => {
     roles.value = data.roles;
     metrics.onlineDevices = data.items.filter((item) => item.status === "enabled").length;
     metrics.totalDevices = data.items.length;
+    if (currentPage.value > totalPages.value) currentPage.value = 1;
   } finally {
     loading.value = false;
   }
@@ -105,6 +167,7 @@ const handleLogout = async () => {
 };
 
 const handleSearch = async () => {
+  currentPage.value = 1;
   await loadUsers();
 };
 
@@ -112,6 +175,7 @@ const handleResetFilters = async () => {
   filters.keyword = "";
   filters.roleCodes = [];
   filters.status = "";
+  currentPage.value = 1;
   await loadUsers();
 };
 
@@ -198,6 +262,32 @@ const handleToggleStatus = async (row: UserListItem) => {
   }
 };
 
+const handleDownloadCsv = () => {
+  if (users.value.length === 0) {
+    ElMessage.info("暂无数据可导出");
+    return;
+  }
+  const header = ["用户名", "姓名/展示名", "角色", "状态", "创建时间", "最后登录时间"];
+  const rows = users.value.map((item) => [
+    item.username,
+    item.display_name,
+    roleLabel(item.role_code, item.role_name),
+    statusLabel(item.status),
+    item.created_at,
+    item.last_login_at,
+  ]);
+  const csv = [header, ...rows]
+    .map((row) => row.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(","))
+    .join("\n");
+  const blob = new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `users_${Date.now()}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+};
+
 onMounted(async () => {
   await loadUsers();
 });
@@ -213,123 +303,172 @@ onMounted(async () => {
     />
 
     <main class="user-page__content">
-      <section class="panel-card user-panel">
-        <div class="page-head">
-          <div>
-            <p class="page-breadcrumb">用户管理 &gt; 用户列表</p>
-            <h2>用户列表</h2>
-          </div>
-          <div class="page-stats">
-            <div class="stats-chip">
-              <span>总用户</span>
-              <strong>{{ filteredSummary.total }}</strong>
-            </div>
-            <div class="stats-chip">
-              <span>启用</span>
-              <strong>{{ filteredSummary.enabled }}</strong>
-            </div>
-            <div class="stats-chip">
-              <span>禁用</span>
-              <strong>{{ filteredSummary.disabled }}</strong>
+      <section class="users-shell">
+        <header class="users-head">
+          <div class="users-head__left">
+            <h2 class="users-head__title">用户列表</h2>
+            <div class="summary-chips">
+              <span class="summary-chip"><em>总数</em><strong>{{ filteredSummary.total }}</strong></span>
+              <span class="summary-chip"><em>启用</em><strong class="dot-enabled">{{ filteredSummary.enabled }}</strong></span>
+              <span class="summary-chip"><em>禁用</em><strong class="dot-disabled">{{ filteredSummary.disabled }}</strong></span>
             </div>
           </div>
-        </div>
 
-        <div class="toolbar-card">
-          <div class="filters-grid">
-            <el-input
-              v-model="filters.keyword"
-              class="toolbar-search"
-              placeholder="搜索用户名 / 姓名 / 角色"
-              clearable
-              @keyup.enter="handleSearch"
-            >
-              <template #prefix>
-                <el-icon><Search /></el-icon>
-              </template>
-            </el-input>
-
-            <div class="filter-group">
-              <label>角色</label>
-              <el-select
-                v-model="filters.roleCodes"
-                multiple
-                collapse-tags
-                collapse-tags-tooltip
-                placeholder="选择角色"
-              >
-                <el-option
-                  v-for="role in roles"
-                  :key="role.code"
-                  :label="role.name"
-                  :value="role.code"
-                />
-              </el-select>
+          <div class="users-head__right">
+            <div class="search-box">
+              <el-icon><Search /></el-icon>
+              <input
+                v-model="filters.keyword"
+                type="text"
+                placeholder="搜索用户"
+                @keyup.enter="handleSearch"
+              />
             </div>
-
-            <div class="filter-group">
-              <label>状态</label>
-              <el-select v-model="filters.status" placeholder="全部状态" clearable>
-                <el-option label="启用" value="enabled" />
-                <el-option label="禁用" value="disabled" />
-              </el-select>
-            </div>
-
-            <div class="toolbar-actions">
-              <el-button @click="handleResetFilters">重置</el-button>
-              <el-button type="primary" @click="handleSearch">筛选</el-button>
-              <el-button class="add-button" type="primary" @click="handleOpenCreate">
-                <el-icon><Plus /></el-icon>
-                新增用户
-              </el-button>
-            </div>
+            <button class="ghost-btn" type="button" @click="handleResetFilters">
+              <el-icon><Hide /></el-icon>
+              重置筛选
+            </button>
+            <button class="ghost-btn" type="button" @click="handleDownloadCsv">
+              <el-icon><Download /></el-icon>
+              导出 CSV
+            </button>
+            <button class="primary-btn" type="button" @click="handleOpenCreate">
+              <el-icon><Plus /></el-icon>
+              新增用户
+            </button>
           </div>
-        </div>
+        </header>
 
-        <div class="table-shell">
-          <el-table
-            v-loading="loading"
-            :data="users"
-            class="users-table"
-            @selection-change="selectedRows = $event"
+        <div class="filter-row">
+          <el-select
+            v-model="filters.roleCodes"
+            multiple
+            collapse-tags
+            collapse-tags-tooltip
+            placeholder="按角色筛选"
+            class="filter-pill"
+            @change="handleSearch"
           >
-            <el-table-column type="selection" width="48" />
-            <el-table-column prop="username" label="用户名" min-width="160" />
-            <el-table-column prop="display_name" label="姓名/展示名" min-width="150" />
-            <el-table-column label="角色" min-width="130">
-              <template #default="{ row }">
-                <span class="role-tag" :class="roleTagClassMap[row.role_code]">
-                  {{ roleLabel(row.role_code, row.role_name) }}
-                </span>
-              </template>
-            </el-table-column>
-            <el-table-column label="状态" min-width="90">
-              <template #default="{ row }">
-                <span class="status-pill" :class="statusClass(row.status)">
-                  {{ statusLabel(row.status) }}
-                </span>
-              </template>
-            </el-table-column>
-            <el-table-column prop="created_at" label="创建时间" min-width="160" />
-            <el-table-column prop="last_login_at" label="最后登录时间" min-width="160" />
-            <el-table-column label="操作" min-width="250" fixed="right">
-              <template #default="{ row }">
-                <div class="row-actions">
-                  <button class="table-action action-link" @click="handleViewDetail(row)">详情</button>
-                  <button class="table-action action-link" @click="handleOpenEdit(row)">编辑</button>
-                  <button class="table-action action-link" @click="handleResetPassword(row)">重置密码</button>
-                  <button
-                    class="table-action"
-                    :class="row.status === 'enabled' ? 'action-warn' : 'action-success'"
-                    @click="handleToggleStatus(row)"
-                  >
-                    {{ row.status === "enabled" ? "禁用" : "启用" }}
-                  </button>
-                </div>
-              </template>
-            </el-table-column>
-          </el-table>
+            <el-option
+              v-for="role in roles"
+              :key="role.code"
+              :label="role.name"
+              :value="role.code"
+            />
+          </el-select>
+          <el-select
+            v-model="filters.status"
+            placeholder="按状态筛选"
+            clearable
+            class="filter-pill"
+            @change="handleSearch"
+          >
+            <el-option label="启用" value="enabled" />
+            <el-option label="禁用" value="disabled" />
+          </el-select>
+          <button class="add-filter" type="button" @click="handleSearch">
+            <el-icon><Plus /></el-icon>
+            应用筛选
+          </button>
         </div>
+
+        <div class="table-wrap" v-loading="loading">
+          <table class="users-table">
+            <thead>
+              <tr>
+                <th class="col-check"><span class="radio-mark" /></th>
+                <th><span class="th-cell"><el-icon><User /></el-icon>用户名</span></th>
+                <th><span class="th-cell"><el-icon><Message /></el-icon>姓名/展示名</span></th>
+                <th><span class="th-cell"><el-icon><Medal /></el-icon>角色</span></th>
+                <th><span class="th-cell"><el-icon><Select /></el-icon>状态</span></th>
+                <th><span class="th-cell"><el-icon><Calendar /></el-icon>创建时间</span></th>
+                <th><span class="th-cell"><el-icon><Key /></el-icon>最后登录时间</span></th>
+                <th><span class="th-cell"><el-icon><Operation /></el-icon>操作</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in pagedUsers" :key="row.id">
+                <td class="col-check"><span class="radio-mark" /></td>
+                <td class="cell-primary">{{ row.username }}</td>
+                <td class="cell-muted">{{ row.display_name }}</td>
+                <td>
+                  <span class="role-text" :class="roleToneMap[row.role_code]">
+                    {{ roleLabel(row.role_code, row.role_name) }}
+                  </span>
+                </td>
+                <td>
+                  <span class="status-text" :class="statusClass(row.status)">
+                    {{ statusLabel(row.status) }}
+                  </span>
+                </td>
+                <td class="cell-muted">{{ row.created_at }}</td>
+                <td class="cell-muted">{{ row.last_login_at || "—" }}</td>
+                <td>
+                  <div class="row-actions">
+                    <button class="row-btn" type="button" @click="handleViewDetail(row)">
+                      <el-icon><View /></el-icon>详情
+                    </button>
+                    <button class="row-btn" type="button" @click="handleOpenEdit(row)">
+                      <el-icon><Edit /></el-icon>编辑
+                    </button>
+                    <button class="row-btn" type="button" @click="handleResetPassword(row)">
+                      <el-icon><Key /></el-icon>重置密码
+                    </button>
+                    <button
+                      class="row-btn"
+                      :class="row.status === 'enabled' ? 'row-btn-warn' : 'row-btn-success'"
+                      type="button"
+                      @click="handleToggleStatus(row)"
+                    >
+                      <el-icon><Delete /></el-icon>
+                      {{ row.status === "enabled" ? "禁用" : "启用" }}
+                    </button>
+                  </div>
+                </td>
+              </tr>
+              <tr v-if="!loading && pagedUsers.length === 0">
+                <td colspan="8" class="empty-row">暂无用户数据</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <footer class="pager">
+          <div class="pager__left">
+            <span>每页</span>
+            <el-select v-model="pageSize" class="page-size-select" @change="currentPage = 1">
+              <el-option :value="12" label="12" />
+              <el-option :value="24" label="24" />
+              <el-option :value="48" label="48" />
+            </el-select>
+            <span class="pager__range">{{ pageRangeLabel }}</span>
+          </div>
+          <div class="pager__right">
+            <button class="pager-btn" :disabled="currentPage === 1" @click="goToPage(1)">
+              <el-icon><DArrowLeft /></el-icon>
+            </button>
+            <button class="pager-btn" :disabled="currentPage === 1" @click="goToPage(currentPage - 1)">
+              <el-icon><ArrowLeft /></el-icon>
+            </button>
+            <template v-for="(item, idx) in visiblePages" :key="`${item}-${idx}`">
+              <span v-if="item === 'gap'" class="pager-gap">…</span>
+              <button
+                v-else
+                class="pager-btn"
+                :class="{ 'pager-btn-active': item === currentPage }"
+                @click="goToPage(item)"
+              >
+                {{ item }}
+              </button>
+            </template>
+            <button class="pager-btn" :disabled="currentPage === totalPages" @click="goToPage(currentPage + 1)">
+              <el-icon><ArrowRight /></el-icon>
+            </button>
+            <button class="pager-btn" :disabled="currentPage === totalPages" @click="goToPage(totalPages)">
+              <el-icon><DArrowRight /></el-icon>
+            </button>
+          </div>
+        </footer>
       </section>
     </main>
 
@@ -426,200 +565,446 @@ onMounted(async () => {
   min-height: 0;
 }
 
-.user-panel {
-  padding: 18px 20px 20px;
+.users-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 24px 28px 20px;
+  border-radius: var(--panel-radius);
+  border: 1px solid var(--border-color);
+  background:
+    linear-gradient(180deg, rgba(23, 37, 69, 0.9), rgba(11, 19, 39, 0.88)),
+    rgba(11, 19, 39, 0.88);
+  box-shadow: var(--shadow-glow);
+  backdrop-filter: blur(16px);
   overflow: hidden;
 }
 
-.page-head {
+.users-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 16px;
+  padding-bottom: 18px;
 }
 
-.page-breadcrumb {
-  margin: 0 0 6px;
-  color: #72d5ff;
-  font-size: 14px;
-  letter-spacing: 0.04em;
+.users-head__left {
+  display: flex;
+  align-items: center;
+  gap: 18px;
 }
 
-.page-head h2 {
+.users-head__title {
   margin: 0;
-  font-size: 26px;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0.01em;
 }
 
-.page-stats {
+.summary-chips {
   display: flex;
-  gap: 10px;
-}
-
-.stats-chip {
-  min-width: 92px;
-  padding: 10px 12px;
-  border-radius: 14px;
-  border: 1px solid rgba(89, 140, 233, 0.16);
-  background: rgba(9, 18, 36, 0.46);
-}
-
-.stats-chip span {
-  display: block;
-  color: var(--text-secondary);
-  font-size: 11px;
-}
-
-.stats-chip strong {
-  display: block;
-  margin-top: 8px;
-  font-size: 20px;
-}
-
-.toolbar-card {
-  margin-bottom: 14px;
-  padding: 14px;
-  border-radius: 18px;
-  border: 1px solid rgba(100, 150, 244, 0.18);
-  background: rgba(8, 16, 33, 0.5);
-}
-
-.filters-grid {
-  display: grid;
-  grid-template-columns: minmax(200px, 260px) minmax(220px, 1fr) 160px auto;
-  gap: 14px;
-  align-items: end;
-}
-
-.toolbar-search {
-  width: 100%;
-}
-
-.filter-group {
-  display: flex;
-  flex-direction: column;
   gap: 8px;
 }
 
-.filter-group label {
-  color: #dce8ff;
-  font-size: 13px;
+.summary-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background: rgba(8, 16, 33, 0.6);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.summary-chip em {
+  font-style: normal;
+  opacity: 0.95;
+}
+
+.summary-chip strong {
+  color: var(--text-primary);
   font-weight: 600;
 }
 
-.toolbar-actions {
+.dot-enabled {
+  color: var(--accent-green) !important;
+}
+
+.dot-disabled {
+  color: var(--accent-red) !important;
+}
+
+.users-head__right {
   display: flex;
+  align-items: center;
   gap: 10px;
-  justify-content: flex-end;
-}
-
-.add-button {
-  min-width: 132px;
-  background: linear-gradient(135deg, #24dcff, #1ca6ff);
-  border: none;
-  color: #04111f;
-  font-weight: 700;
-}
-
-.table-shell {
-  height: calc(100% - 148px);
-  min-height: 420px;
-  padding: 4px;
-  border-radius: 18px;
-  border: 1px solid rgba(100, 150, 244, 0.16);
-  background: rgba(8, 16, 33, 0.38);
-}
-
-.users-table {
-  height: 100%;
-  --el-table-bg-color: transparent;
-  --el-table-tr-bg-color: rgba(8, 16, 33, 0.2);
-  --el-table-header-bg-color: rgba(89, 104, 122, 0.42);
-  --el-table-border-color: rgba(87, 217, 255, 0.28);
-  --el-table-text-color: #f1f7ff;
-  --el-table-header-text-color: #dce8ff;
-  --el-table-row-hover-bg-color: rgba(33, 82, 153, 0.25);
-}
-
-:deep(.users-table .el-table__header-wrapper th),
-:deep(.users-table .el-table__body-wrapper td) {
-  border-right: 1px solid rgba(87, 217, 255, 0.26);
-}
-
-:deep(.users-table .el-table__inner-wrapper::before) {
-  background-color: rgba(87, 217, 255, 0.26);
-}
-
-.role-tag,
-.status-pill {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 76px;
-  padding: 5px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.role-sysadmin {
-  color: #55e0ff;
-}
-
-.role-envadmin {
-  color: #c8ef63;
-}
-
-.role-analyst {
-  color: #4a8bff;
-}
-
-.role-operator {
-  color: #8d9cbc;
-}
-
-.status-enabled {
-  background: rgba(46, 206, 113, 0.16);
-  border: 1px solid rgba(46, 206, 113, 0.34);
-  color: #58f296;
-}
-
-.status-disabled {
-  background: rgba(255, 187, 64, 0.14);
-  border: 1px solid rgba(255, 187, 64, 0.32);
-  color: #ffd25f;
-}
-
-.row-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
   flex-wrap: wrap;
 }
 
-.table-action {
+.search-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  height: 36px;
+  min-width: 240px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: rgba(8, 16, 33, 0.6);
+  color: var(--text-secondary);
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.search-box:focus-within {
+  border-color: var(--border-strong);
+  background: rgba(8, 16, 33, 0.82);
+}
+
+.search-box input {
+  flex: 1;
   border: none;
+  outline: none;
   background: transparent;
-  padding: 0;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.search-box input::placeholder {
+  color: var(--text-muted);
+}
+
+.ghost-btn,
+.primary-btn,
+.add-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.ghost-btn {
+  border: 1px solid var(--border-color);
+  background: rgba(8, 16, 33, 0.6);
+  color: var(--text-primary);
+}
+
+.ghost-btn:hover {
+  border-color: var(--border-strong);
+  background: rgba(83, 209, 255, 0.12);
+  color: var(--accent-cyan);
+}
+
+.primary-btn {
+  border: 1px solid rgba(83, 209, 255, 0.45);
+  background: linear-gradient(135deg, var(--accent-cyan) 0%, var(--accent-blue) 100%);
+  color: #07101d;
+  font-weight: 600;
+  box-shadow: 0 6px 20px rgba(83, 209, 255, 0.32);
+}
+
+.primary-btn:hover {
+  filter: brightness(1.1);
+  box-shadow: 0 8px 28px rgba(83, 209, 255, 0.45);
+}
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 14px;
+}
+
+.filter-pill {
+  width: 180px;
+}
+
+.filter-pill :deep(.el-select__wrapper) {
+  min-height: 36px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color) !important;
+  background: rgba(8, 16, 33, 0.6) !important;
+  box-shadow: none !important;
+}
+
+.filter-pill :deep(.el-select__wrapper.is-hovering:not(.is-focused)) {
+  border-color: var(--border-strong) !important;
+  box-shadow: none !important;
+}
+
+.filter-pill :deep(.el-select__wrapper.is-focused) {
+  border-color: var(--accent-cyan) !important;
+  box-shadow: none !important;
+}
+
+.filter-pill :deep(.el-select__placeholder) {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.filter-pill :deep(.el-select__selected-item) {
+  color: var(--text-primary);
+}
+
+.add-filter {
+  border: 1px dashed var(--border-strong);
+  background: rgba(8, 16, 33, 0.4);
+  color: var(--text-secondary);
+  border-radius: 999px;
+  padding: 0 14px;
+}
+
+.add-filter:hover {
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
+}
+
+.table-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border-radius: 14px;
+  border: 1px solid var(--border-color);
+  background: rgba(8, 16, 33, 0.45);
+}
+
+.users-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.users-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 14px 16px;
+  text-align: left;
+  font-weight: 500;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: rgba(11, 19, 39, 0.96);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.th-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.th-cell .el-icon {
   font-size: 14px;
-  transition: opacity 0.18s ease;
+  color: var(--accent-cyan);
 }
 
-.table-action:hover {
-  opacity: 0.8;
+.users-table tbody td {
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(87, 140, 255, 0.1);
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
-.action-link {
-  color: #4ce0ff;
+.users-table tbody tr:hover td {
+  background: rgba(83, 209, 255, 0.06);
 }
 
-.action-warn {
-  color: #ffd661;
+.col-check {
+  width: 44px;
 }
 
-.action-success {
-  color: #6ef2a7;
+.radio-mark {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+}
+
+.cell-primary {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.cell-muted {
+  color: var(--text-secondary);
+}
+
+.role-text {
+  font-weight: 500;
+}
+
+.tone-cyan {
+  color: var(--accent-cyan);
+}
+
+.tone-lime {
+  color: var(--accent-green);
+}
+
+.tone-blue {
+  color: var(--accent-blue);
+}
+
+.tone-slate {
+  color: var(--text-secondary);
+}
+
+.status-text {
+  font-weight: 500;
+}
+
+.status-enabled {
+  color: var(--accent-green);
+}
+
+.status-disabled {
+  color: var(--accent-red);
+}
+
+.row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.row-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: rgba(8, 16, 33, 0.6);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.row-btn .el-icon {
+  font-size: 12px;
+}
+
+.row-btn:hover {
+  border-color: var(--accent-cyan);
+  background: rgba(83, 209, 255, 0.12);
+  color: var(--accent-cyan);
+}
+
+.row-btn-warn {
+  color: var(--accent-amber);
+}
+
+.row-btn-warn:hover {
+  border-color: rgba(255, 179, 71, 0.55);
+  background: rgba(255, 179, 71, 0.12);
+  color: var(--accent-amber);
+}
+
+.row-btn-success {
+  color: var(--accent-green);
+}
+
+.row-btn-success:hover {
+  border-color: rgba(64, 223, 154, 0.55);
+  background: rgba(64, 223, 154, 0.12);
+  color: var(--accent-green);
+}
+
+.empty-row {
+  padding: 40px 16px !important;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 16px;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.pager__left {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.page-size-select {
+  width: 80px;
+}
+
+.page-size-select :deep(.el-select__wrapper) {
+  min-height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color) !important;
+  background: rgba(8, 16, 33, 0.6) !important;
+  box-shadow: none !important;
+}
+
+.page-size-select :deep(.el-select__selected-item) {
+  color: var(--text-primary);
+}
+
+.pager__right {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pager-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: rgba(8, 16, 33, 0.6);
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.pager-btn:hover:not(:disabled) {
+  border-color: var(--accent-cyan);
+  background: rgba(83, 209, 255, 0.12);
+  color: var(--accent-cyan);
+}
+
+.pager-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.pager-btn-active {
+  border-color: var(--accent-cyan);
+  background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+  color: #07101d;
+  font-weight: 600;
+}
+
+.pager-gap {
+  padding: 0 4px;
+  color: var(--text-muted);
 }
 
 .detail-grid {
@@ -630,33 +1015,35 @@ onMounted(async () => {
 
 .detail-item {
   padding: 12px;
-  border-radius: 14px;
-  border: 1px solid rgba(95, 122, 191, 0.16);
-  background: rgba(8, 16, 33, 0.5);
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background: rgba(8, 16, 33, 0.45);
 }
 
 .detail-item span {
   display: block;
-  color: var(--text-secondary);
+  color: var(--text-muted);
   font-size: 12px;
 }
 
 .detail-item strong {
   display: block;
-  margin-top: 8px;
+  margin-top: 6px;
+  color: var(--text-primary);
 }
 
 .permissions-panel {
   margin-top: 16px;
   padding: 14px;
-  border-radius: 14px;
-  background: rgba(8, 16, 33, 0.5);
+  border-radius: 12px;
+  background: rgba(8, 16, 33, 0.45);
+  border: 1px solid var(--border-color);
 }
 
 .permissions-panel p {
   margin: 0 0 10px;
-  color: #dce8ff;
-  font-weight: 600;
+  color: var(--text-secondary);
+  font-weight: 500;
 }
 
 .permissions-list {
@@ -666,41 +1053,46 @@ onMounted(async () => {
 }
 
 .permissions-list span {
-  padding: 6px 10px;
+  padding: 5px 10px;
   border-radius: 999px;
-  background: rgba(56, 113, 222, 0.2);
-  color: #beddff;
+  background: rgba(83, 209, 255, 0.1);
+  border: 1px solid rgba(83, 209, 255, 0.25);
+  color: var(--accent-cyan);
   font-size: 12px;
 }
 
 @media (max-width: 1380px) {
-  .filters-grid {
-    grid-template-columns: 1fr 1fr;
+  .users-head {
+    flex-direction: column;
+    align-items: stretch;
   }
 
-  .toolbar-actions {
-    grid-column: 1 / -1;
-    justify-content: flex-start;
+  .users-head__right {
+    justify-content: flex-end;
   }
 }
 
 @media (max-width: 980px) {
-  .page-head {
-    flex-direction: column;
+  .users-shell {
+    padding: 18px;
   }
 
-  .page-stats {
-    width: 100%;
+  .users-head__left {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .search-box {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .filter-row {
     flex-wrap: wrap;
   }
 
-  .filters-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .table-shell {
-    height: auto;
-    min-height: 0;
+  .filter-pill {
+    width: 100%;
   }
 
   .detail-grid {
