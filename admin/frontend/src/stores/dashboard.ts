@@ -11,6 +11,7 @@ import type {
   KeyParameter,
   PredictionPayload,
   SensorPayload,
+  TopContributorSeries,
 } from "@/types/dashboard";
 import { highlightedSensorFields, sensorMeta } from "@/utils/sensorMeta";
 
@@ -129,6 +130,7 @@ export const useDashboardStore = defineStore("dashboard", () => {
   const equipmentStatus = ref<EquipmentStatusResponse>(createEquipment());
   const heatmap = ref<HeatmapResponse>(createHeatmap());
   const attribution = ref<Attribution | null>(null);
+  const topContributorSeries = ref<TopContributorSeries[]>([]);
   const isExceedWarning = ref(false);
   const loading = ref(false);
   const connected = ref(false);
@@ -147,6 +149,7 @@ export const useDashboardStore = defineStore("dashboard", () => {
       equipmentStatus.value = equipmentResponse.data;
       heatmap.value = heatmapResponse.data;
       attribution.value = overviewResponse.data.attribution ?? null;
+      topContributorSeries.value = overviewResponse.data.topContributorSeries ?? [];
       isExceedWarning.value = overview.value.metrics.alertLevel !== "normal";
     } finally {
       loading.value = false;
@@ -232,6 +235,7 @@ export const useDashboardStore = defineStore("dashboard", () => {
     equipmentStatus,
     heatmap,
     attribution,
+    topContributorSeries,
     isExceedWarning,
     loading,
     connected,

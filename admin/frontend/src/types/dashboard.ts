@@ -59,6 +59,20 @@ export interface FactoryNode {
   y: number;
 }
 
+export interface TopContributorSeries {
+  feature: string;
+  label: string;
+  unit: string;
+  group: string;
+  ratio: number;
+  contribution: number;
+  currentValue: number;
+  meanValue: number;
+  maxValue: number;
+  minValue: number;
+  series: TrendPoint[];
+}
+
 export interface DashboardOverview {
   timestamp: string;
   metrics: DashboardMetrics;
@@ -69,6 +83,7 @@ export interface DashboardOverview {
   continuousAlerts: ContinuousAlert[];
   factoryNodes: FactoryNode[];
   attribution?: Attribution;
+  topContributorSeries?: TopContributorSeries[];
 }
 
 export interface EquipmentStatusItem {

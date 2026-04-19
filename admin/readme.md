@@ -1,7 +1,21 @@
-管理员前端启动：waste-gas\admin\frontend   
+Admin frontend:
+`C:\Users\patri\OneDrive - bjtu.edu.cn\Files\服务外包\waste-gas\admin\frontend`
 
-npm run dev
+Run:
+`npm run dev`
 
-管理员后端启动：waste-gas\admin\backend
+Admin backend:
+`C:\Users\patri\OneDrive - bjtu.edu.cn\Files\服务外包\waste-gas\admin\backend`
 
-python -m uvicorn main:app --host 127.0.0.1 --port 8002 --reload
+Run:
+`python -m uvicorn main:app --host 127.0.0.1 --port 8003 --reload`
+
+Current ports:
+- `ensemble_docker`: `8000`
+- `vocs_server`: `8001`
+- `admin backend`: `8003`
+- `admin frontend (Vite)`: `3001`
+
+Vite proxy:
+- `/api` -> `http://localhost:8003`
+- `/vocs` -> `http://localhost:8001`
