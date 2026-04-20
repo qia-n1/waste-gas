@@ -3,37 +3,37 @@
     <view class="monitor-hero motion-fade delay-1">
       <view class="hero-text">
         <text class="page-title">实时监控</text>
-        <text class="page-subtitle">设备与 VOCs 等指标</text>
+        <text class="page-subtitle">设备与挥发性有机物等指标</text>
       </view>
       <view class="header-actions">
-        <button class="icon-btn" @click="refreshData"><text>🔄</text></button>
-        <button class="icon-btn" @click="exportData"><text>📤</text></button>
+        <button class="icon-btn" @click="refreshData"><text>刷新</text></button>
+        <button class="icon-btn" @click="exportData"><text>导出</text></button>
       </view>
     </view>
 
     <view class="data-cards motion-fade delay-2">
       <view class="data-card accent-violet">
-        <text class="data-label">VOCs 浓度</text>
+        <text class="data-label">挥发性有机物浓度</text>
         <text class="data-value">{{ displayData.vocs }}</text>
-        <text class="data-unit">mg/m³</text>
+        <text class="data-unit">毫克每立方米</text>
         <StatusTag class="data-status" :label="vocsStatusText" :type="vocsStatusClass" />
       </view>
       <view class="data-card accent-pink">
         <text class="data-label">温度</text>
         <text class="data-value">{{ displayData.temperature }}</text>
-        <text class="data-unit">℃</text>
+        <text class="data-unit">摄氏度</text>
         <StatusTag class="data-status" :label="tempStatusText" :type="tempStatusClass" />
       </view>
       <view class="data-card accent-sky">
         <text class="data-label">湿度</text>
         <text class="data-value">{{ displayData.humidity }}</text>
-        <text class="data-unit">%</text>
+        <text class="data-unit">百分比</text>
         <StatusTag class="data-status" :label="humidityStatusText" :type="humidityStatusClass" />
       </view>
       <view class="data-card accent-peach">
         <text class="data-label">压力</text>
         <text class="data-value">{{ displayData.pressure }}</text>
-        <text class="data-unit">kPa</text>
+        <text class="data-unit">千帕</text>
         <StatusTag class="data-status" :label="pressureStatusText" :type="pressureStatusClass" />
       </view>
     </view>
@@ -42,7 +42,7 @@
       <view class="section-head">
         <view>
           <text class="section-title">数据趋势</text>
-          <text class="section-desc">最近读数 · 约 20 秒自动同步</text>
+          <text class="section-desc">最近读数，约二十秒自动同步</text>
         </view>
       </view>
       <view class="chart-container">
@@ -122,9 +122,12 @@ export default {
       pollTimer: null,
       pollMs: 20000,
       motionReady: false,
+      pageActive: true,
+      animTimers: [],
     };
   },
   onShow() {
+    this.pageActive = true;
     this.motionReady = false;
     this.$nextTick(() => {
       this.motionReady = true;
@@ -133,10 +136,14 @@ export default {
     this.startPoll();
   },
   onHide() {
+    this.pageActive = false;
     this.stopPoll();
+    this.clearAnimTimers();
   },
   onUnload() {
+    this.pageActive = false;
     this.stopPoll();
+    this.clearAnimTimers();
   },
   computed: {
     vocsStatusClass() { if (this.realTimeData.vocs > 50) return 'error'; if (this.realTimeData.vocs > 20) return 'warning'; return 'normal'; },
@@ -189,6 +196,10 @@ export default {
     },
   },
   methods: {
+    clearAnimTimers() {
+      (this.animTimers || []).forEach((t) => clearInterval(t));
+      this.animTimers = [];
+    },
     animateNumber(fromValue, toValue, setValue, duration = 420) {
       const from = Number(fromValue || 0);
       const to = Number(toValue || 0);
@@ -203,17 +214,27 @@ export default {
       }
       const start = Date.now();
       const timer = setInterval(() => {
+        if (!this.pageActive) {
+          clearInterval(timer);
+          const off = this.animTimers.indexOf(timer);
+          if (off >= 0) this.animTimers.splice(off, 1);
+          return;
+        }
         const progress = Math.min(1, (Date.now() - start) / duration);
         const eased = 1 - Math.pow(1 - progress, 3);
         const next = from + delta * eased;
         setValue(Number(next.toFixed(1)));
         if (progress >= 1) {
           clearInterval(timer);
+          const idx = this.animTimers.indexOf(timer);
+          if (idx >= 0) this.animTimers.splice(idx, 1);
           setValue(Number(to.toFixed(1)));
         }
       }, 16);
+      this.animTimers.push(timer);
     },
     animateMetrics() {
+      this.clearAnimTimers();
       this.animateNumber(this.displayData.vocs, this.realTimeData.vocs, (v) => {
         this.displayData.vocs = Number(v.toFixed(1));
       });
@@ -242,6 +263,7 @@ export default {
     async loadRealtimeData() {
       try {
         const res = await request({ url: '/monitor/realtime' });
+        if (!this.pageActive) return;
         if (res && res.code === 200 && res.data) {
           if (res.data.real_time_data) {
             this.realTimeData = {
@@ -250,7 +272,7 @@ export default {
               humidity: res.data.real_time_data.humidity,
               pressure: res.data.real_time_data.pressure
             };
-            this.animateMetrics();
+            if (this.pageActive) this.animateMetrics();
           }
           if (res.data.device_info) this.deviceInfo = res.data.device_info;
           const trend = res.data.trend || [];
@@ -262,16 +284,19 @@ export default {
             short: (t.time || '').slice(-5) || '—',
             value: Number(t.vocs || 0),
           }));
-          this.$nextTick(() => this.measureTrendPlot());
+          this.$nextTick(() => {
+            if (this.pageActive) this.measureTrendPlot();
+          });
         }
       } catch (error) {
         uni.showToast({ title: '监控数据加载失败', icon: 'none' });
       }
     },
     measureTrendPlot() {
+      if (!this.pageActive) return;
       const q = uni.createSelectorQuery().in(this);
       q.select('.trend-line-wrap').boundingClientRect((rect) => {
-        if (!rect) return;
+        if (!this.pageActive || !rect) return;
         this.trendPlotSize = { w: rect.width || 1, h: rect.height || 1 };
       }).exec();
     },

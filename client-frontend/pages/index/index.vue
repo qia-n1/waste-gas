@@ -30,7 +30,7 @@
       <view class="section-head">
         <view>
           <text class="section-title">厂区地图</text>
-          <text class="section-desc">火电厂平面示意（白紫）· 仅本人负责区可点选查看数据</text>
+          <text class="section-desc">缩放至约百分之一百五十显示工艺单元与标点；涂装车间设在喷涂生产厂房内。管辖区域有高亮，点击厂房可看说明与实时汇总</text>
         </view>
         <view class="map-actions">
           <view class="map-action" @click="zoomOut">-</view>
@@ -48,43 +48,161 @@
       <view class="map-area">
         <view
           class="map-zoom-wrap"
+          :class="{ 'map-zoom-detail': showMapDetail }"
+          :style="mapZoomWrapStyle"
           @touchstart="onMapTouchStart"
           @touchmove="onMapTouchMove"
           @touchend="onMapTouchEnd"
           @touchcancel="onMapTouchEnd"
         >
-        <view class="plant-canvas" :style="{ transform: `scale(${mapScale})` }">
-          <view class="plant-grid"></view>
-          <view class="plant-border"></view>
-          <view class="plant-node desulfurization">脱硫塔</view>
-          <view class="plant-node chimney">烟囱</view>
-          <view class="plant-node cooling-a">冷却塔1</view>
-          <view class="plant-node cooling-b">冷却塔2</view>
-          <view class="plant-node main-workshop">主厂房</view>
-          <view class="plant-node material-corridor">原料廊道</view>
-          <view class="plant-node auxiliary-a">辅助楼A</view>
-          <view class="plant-node auxiliary-b">辅助楼B</view>
-          <view class="plant-node power-zone">配电装置区</view>
-          <view class="plant-node painting-shell" @click="openPaintingWorkshop">涂装车间</view>
+        <view
+          class="plant-canvas plant-campus"
+          :class="{ 'zoom-detail': showMapDetail }"
+          :style="mapCanvasStyle"
+        >
+          <view class="campus-bg"></view>
+          <view class="campus-grass"></view>
+          <view class="campus-road campus-road-n"></view>
+          <view class="campus-road campus-road-s"></view>
+          <view class="campus-road campus-road-w"></view>
+          <view class="campus-road campus-road-e"></view>
+          <view class="road-dash road-dash-h"></view>
+          <view class="road-dash road-dash-v"></view>
+
+          <view class="cooling-tower ct-a"></view>
+          <view class="cooling-tower ct-b"></view>
+
+          <block v-for="zone in mapZoneBubblesResolved" :key="`zone-bubble-${zone.key}`">
+            <view
+              v-if="shouldShowZoneBubble(zone)"
+              class="zone-bubble"
+              :style="zoneBubbleStyle(zone)"
+              @click.stop="openBuildingFromKey(zone.key)"
+            >
+              <text class="zone-bubble-title">{{ zone.title }}</text>
+              <text class="zone-bubble-sub">工艺单元</text>
+            </view>
+          </block>
+
+          <view class="hit-stack" @click.stop="openBuildingFromKey('stack')"></view>
+          <view class="chimney-column"></view>
+          <view class="chimney-smoke s1"></view>
+          <view class="chimney-smoke s2"></view>
+          <view class="chimney-smoke s3"></view>
 
           <view
-            v-for="area in plantOverlays"
-            :key="`overlay-${area.id}`"
-            class="area-overlay"
-            :class="[area.level, { active: selectedArea && selectedArea.id === area.id }]"
-            :style="areaOverlayStyle(area)"
-            @click="selectArea(area)"
+            class="bld bld-coating"
+            :class="{ 'bld-owned': isOwnedZoneKey('coating') }"
+            @click.stop="openBuildingFromKey('coating')"
           >
-            <text class="overlay-badge" v-if="area.level === 'high'">告警</text>
-            <text class="overlay-title">{{ area.name }}</text>
-            <text class="overlay-meta">设备 {{ area.deviceCount }} · 告警 {{ area.alertCount }}</text>
-            <text class="overlay-hint">点击查看指标</text>
+            <view class="bld-roof"></view>
+            <view class="bld-body">
+              <view v-if="showMapDetail" class="bld-structure"><view class="bld-str-line v1"></view><view class="bld-str-line v2"></view><view class="bld-str-line h1"></view></view>
+            </view>
+          </view>
+          <view
+            class="bld bld-rotor"
+            :class="{ 'bld-owned': isOwnedZoneKey('rotor') }"
+            @click.stop="openBuildingFromKey('rotor')"
+          >
+            <view class="bld-roof"></view>
+            <view class="bld-body">
+              <view v-if="showMapDetail" class="bld-structure"><view class="bld-str-line v1"></view><view class="bld-str-line h1"></view></view>
+            </view>
+          </view>
+          <view
+            class="bld bld-rto"
+            :class="{ 'bld-owned': isOwnedZoneKey('rto') }"
+            @click.stop="openBuildingFromKey('rto')"
+          >
+            <view class="bld-roof"></view>
+            <view class="bld-body">
+              <view v-if="showMapDetail" class="bld-structure bld-structure--dense"><view class="bld-str-line v1"></view><view class="bld-str-line v2"></view><view class="bld-str-line h1"></view><view class="bld-str-line h2"></view></view>
+            </view>
+          </view>
+          <view
+            class="bld bld-utility"
+            :class="{ 'bld-owned': isOwnedZoneKey('utility') }"
+            @click.stop="openBuildingFromKey('utility')"
+          >
+            <view class="bld-roof"></view>
+            <view class="bld-body">
+              <view v-if="showMapDetail" class="bld-structure"><view class="bld-str-line v1"></view><view class="bld-str-line h1"></view></view>
+            </view>
+          </view>
+          <view class="bld bld-public" @click.stop="openBuildingFromKey('public')">
+            <view class="bld-roof bld-roof--flat"></view>
+            <view class="bld-body">
+              <view v-if="showMapDetail" class="bld-structure"><view class="bld-str-line h1"></view></view>
+            </view>
+          </view>
+
+          <block v-for="area in ownedAreasHighlight" :key="'own-' + area.id">
+            <view class="area-own-ring" :style="areaOverlayStyle(area)"></view>
+          </block>
+
+          <block v-for="area in mapAreas" :key="'outline-' + area.id">
+            <view
+              v-if="area.canView && selectedArea && selectedArea.id === area.id"
+              class="area-sel-outline"
+              :class="area.level"
+              :style="areaOverlayStyle(area)"
+            ></view>
+          </block>
+
+          <view
+            v-for="area in externalAreas"
+            :key="`ext-${area.id}`"
+            class="ext-marker"
+            :class="area.level"
+            :style="externalMarkerStyle(area)"
+          >
+            <view class="ext-dot"></view>
+          </view>
+
+          <view
+            v-for="point in mapPointsForCanvas"
+            :key="`mpt-${point.id}`"
+            class="map-point"
+            :class="[point.level, { active: selectedPoint && selectedPoint.id === point.id }]"
+            :style="mapPointStyle(point)"
+            @click.stop="selectPointByMap(point)"
+          >
+            <view class="map-point-anchor">
+              <view
+                v-if="showMapDetail || isAlwaysVisiblePoint(point)"
+                class="map-point-cap"
+                :class="{ compact: !showMapDetail }"
+                :style="mapPointCapStyle(point)"
+              >
+                <text class="map-point-cap-txt">{{ showMapDetail ? formatPointMapLabel(point) : formatPointMarkerLabel(point) }}</text>
+              </view>
+              <view class="map-point-dotlayer">
+                <view class="map-point-ring"></view>
+                <view class="map-point-core"></view>
+              </view>
+            </view>
+          </view>
+
+          <view
+            v-for="point in referenceMapPoints"
+            :key="`ref-mpt-${point.id}`"
+            class="map-point ref-only"
+            :class="point.level"
+            :style="mapPointStyle(point)"
+          >
+            <view class="map-point-anchor">
+              <view class="map-point-dotlayer">
+                <view class="map-point-ring"></view>
+                <view class="map-point-core"></view>
+              </view>
+            </view>
           </view>
         </view>
         </view>
       </view>
       <view v-if="selectedAreaData && metricPointsForSelected.length" class="metric-block">
-        <text class="metric-block-title">监测指标 · {{ selectedAreaData.name }}</text>
+        <text class="metric-block-title">监测指标，{{ displayZoneTitle(selectedAreaData.name) }}</text>
         <view class="metric-col">
           <view
             v-for="point in metricPointsForSelected"
@@ -106,13 +224,24 @@
         <view class="stat-chip">在线点位 {{ mapPoints.length }}</view>
         <view class="stat-chip warning">高等级 {{ highAlertCount }}</view>
       </view>
+
+      <view v-if="mapPanel && mapPanel.canView" class="map-building-panel">
+        <text class="mbp-kicker">已选厂房与单元</text>
+        <text class="mbp-title">{{ mapPanel.title }}</text>
+        <text class="mbp-sub">{{ mapPanel.sub }}</text>
+        <view class="mbp-stats">
+          <text class="mbp-line">设备 {{ mapPanel.deviceCount }}，在线率 {{ mapPanel.onlineRate }}％，告警 {{ mapPanel.alertCount }}</text>
+          <text class="mbp-line">区域均值挥发性有机物 {{ mapPanel.avgVocs }} 毫克每立方米，{{ levelLabel(mapPanel.level) }}</text>
+          <text class="mbp-line mbp-live">实时数据：首页上方为全厂挥发性有机物与温湿度；选中排口后下方「区域详情」展示该点浓度与趋势。</text>
+        </view>
+      </view>
     </view>
 
     <view v-if="selectedPoint && selectedAreaData" class="detail-card motion-fade delay-4">
       <view class="section-head compact">
         <view>
           <text class="section-title">区域详情</text>
-          <text class="section-desc">{{ selectedPoint.areaName }} · {{ selectedPoint.deviceId }}</text>
+          <text class="section-desc">{{ displayZoneTitle(selectedPoint.areaName) }}，设备编号 {{ selectedPoint.deviceId }}</text>
         </view>
         <text class="point-status" :class="selectedPoint.level">{{ selectedPoint.status }}</text>
       </view>
@@ -131,8 +260,8 @@
     <view class="overview-card motion-fade delay-4">
       <view class="section-head compact">
         <view>
-          <text class="section-title">未来 6 小时 VOCs</text>
-          <text class="section-desc">短时预测（mg/m³）</text>
+          <text class="section-title">未来六小时挥发性有机物</text>
+          <text class="section-desc">短时预测（毫克每立方米）</text>
         </view>
       </view>
       <view v-if="prediction6h.length" class="pred-chart">
@@ -187,13 +316,13 @@
       <view class="section-head compact">
         <view>
           <text class="section-title">实时概览</text>
-          <text class="section-desc">当前 VOCs、温度、湿度核心指标</text>
+          <text class="section-desc">当前挥发性有机物、温度、湿度核心指标</text>
         </view>
       </view>
       <view class="metric-grid">
-        <view class="metric-box"><text class="metric-label">VOCs</text><text class="metric-value">{{ animatedRealtime.vocs }}</text><text class="metric-unit">mg/m³</text></view>
-        <view class="metric-box"><text class="metric-label">温度</text><text class="metric-value">{{ animatedRealtime.temperature }}</text><text class="metric-unit">℃</text></view>
-        <view class="metric-box"><text class="metric-label">湿度</text><text class="metric-value">{{ animatedRealtime.humidity }}</text><text class="metric-unit">%</text></view>
+        <view class="metric-box"><text class="metric-label">挥发性有机物</text><text class="metric-value">{{ animatedRealtime.vocs }}</text><text class="metric-unit">毫克每立方米</text></view>
+        <view class="metric-box"><text class="metric-label">温度</text><text class="metric-value">{{ animatedRealtime.temperature }}</text><text class="metric-unit">摄氏度</text></view>
+        <view class="metric-box"><text class="metric-label">相对湿度</text><text class="metric-value">{{ animatedRealtime.humidity }}</text><text class="metric-unit">百分比</text></view>
       </view>
     </view>
   </view>
@@ -201,6 +330,8 @@
 
 <script>
 import { request } from '../../utils/api';
+import { displaySensorFieldLabel } from '../../utils/sensorDisplay';
+import { displayZoneTitle, formatPointMapLabel, formatPointMarkerLabel } from '../../utils/zoneDisplay';
 
 export default {
   data() {
@@ -220,10 +351,17 @@ export default {
       predMax: 1,
       predPlotSize: { w: 1, h: 1 },
       mapScale: 1,
+      mapViewportHeight: 360,
       pinchStartDistance: 0,
       pinchStartScale: 1,
       isPinching: false,
       motionReady: false,
+      mapPanel: null,
+      /** 地图缩放 ≥ 该值时显示排口名称、厂房内构造线（与 zoomLabel 100% 基准对应） */
+      mapDetailZoomThreshold: 1.5,
+      /** 避免切页后 setInterval 仍回调，触发微信内部 __subPageFrameEndTime__ 空引用 */
+      pageActive: true,
+      animTimers: [],
     };
   },
   computed: {
@@ -237,7 +375,31 @@ export default {
       return this.selectedArea || null;
     },
     zoomLabel() {
-      return `${Math.round(this.mapScale * 100)}%`;
+      return `${Math.round(this.mapScale * 100)}％`;
+    },
+    showMapDetail() {
+      return this.mapScale >= this.mapDetailZoomThreshold;
+    },
+    mapZoomWrapStyle() {
+      const h = Number(this.mapViewportHeight || 360);
+      return {
+        minHeight: `${h}px`,
+        maxHeight: `${Math.round(h * 1.12)}px`,
+      };
+    },
+    mapCanvasStyle() {
+      const h = Number(this.mapViewportHeight || 360);
+      const detail = this.showMapDetail ? Math.round(h * 1.08) : h;
+      return {
+        transform: `scale(${this.mapScale})`,
+        width: '100%',
+        minWidth: '0',
+        height: `${detail}px`,
+        minHeight: `${detail}px`,
+      };
+    },
+    ownedAreasHighlight() {
+      return (this.mapAreas || []).filter((a) => a.canView);
     },
     pointsByArea() {
       const grouped = {};
@@ -248,12 +410,91 @@ export default {
       });
       return grouped;
     },
-    plantOverlays() {
-      return (this.mapAreas || []).filter((a) => a.canView);
+    externalAreas() {
+      return (this.mapAreas || []).filter((a) => !a.canView);
+    },
+    mapZoneBubbles() {
+      return [
+        { key: 'stack', title: '排口烟囱区', left: 11, top: 13 },
+        { key: 'coating', title: '喷涂生产厂房', left: 35, top: 42 },
+        { key: 'rotor', title: '转轮吸附厂房', left: 49, top: 39 },
+        { key: 'rto', title: 'RTO 主处理厂房', left: 64, top: 47 },
+        // 右侧两块固定错层，避免互相压住
+        { key: 'utility', title: '公辅燃烧区', left: 89, top: 54 },
+        { key: 'public', title: '监测附属区', left: 89, top: 69 },
+      ];
+    },
+    primaryMonitorPointId() {
+      const points = (this.mapPoints || []).filter((p) => String(p?.areaName || '').trim() === '喷涂生产厂房');
+      if (!points.length) return null;
+      // 默认态只显示 1 个监测点位：选喷涂车间附近（接近厂房中心）的点
+      const target = { x: 34, y: 43 };
+      const sorted = points.slice().sort((a, b) => {
+        const dax = Number(a?.x ?? 50) - target.x;
+        const day = Number(a?.y ?? 50) - target.y;
+        const dbx = Number(b?.x ?? 50) - target.x;
+        const dby = Number(b?.y ?? 50) - target.y;
+        const da = dax * dax + day * day;
+        const db = dbx * dbx + dby * dby;
+        return da - db;
+      });
+      return sorted[0]?.id ?? null;
+    },
+    mapZoneBubblesResolved() {
+      const bubbles = (this.mapZoneBubbles || []).map((item) => ({ ...item }));
+      if (this.showMapDetail) return bubbles;
+      const occupied = [];
+      const visiblePointBoxes = (this.mapPoints || [])
+        .filter((point) => this.isAlwaysVisiblePoint(point))
+        .map((point) => this.pointLabelBox(point));
+      const tryOffsets = [
+        { dx: 0, dy: 0 },
+        { dx: 0, dy: 14 },
+        { dx: 0, dy: -10 },
+        { dx: 0, dy: 10 },
+        { dx: -12, dy: 0 },
+        { dx: 12, dy: 0 },
+        { dx: -16, dy: 14 },
+        { dx: 16, dy: 14 },
+        { dx: -12, dy: -8 },
+        { dx: 12, dy: -8 },
+        { dx: -14, dy: 10 },
+        { dx: 14, dy: 10 },
+      ];
+      const resolved = bubbles.map((zone) => {
+        const picked = this.pickBubblePlacement(zone, tryOffsets, visiblePointBoxes, occupied);
+        occupied.push(this.zoneBubbleBox(picked.left, picked.top));
+        return picked;
+      });
+      return this.enforceBubbleRowSpacing(resolved);
+    },
+    visiblePointAreaNames() {
+      const names = new Set();
+      (this.mapPoints || []).forEach((point) => {
+        if (!this.isAlwaysVisiblePoint(point)) return;
+        names.add(String(point?.areaName || '').trim());
+      });
+      return names;
     },
     metricPointsForSelected() {
       if (!this.selectedAreaData) return [];
       return this.pointsByArea[this.selectedAreaData.name] || [];
+    },
+    mapPointsForCanvas() {
+      // 默认视图隐藏点位圆点，减少地图干扰；放大后仍可查看全部点位
+      return this.showMapDetail ? (this.mapPoints || []) : [];
+    },
+    referenceMapPoints() {
+      // 参考示意图补充的固定点位（仅地图展示，不影响后端监测数据）
+      if (this.showMapDetail) return [];
+      return [
+        { id: 'ref-monitor-left', x: 12, y: 42, level: 'low' },
+        { id: 'ref-coating-main', x: 34, y: 50, level: 'low' },
+        { id: 'ref-key-device', x: 52, y: 34, level: 'high' },
+        { id: 'ref-rto-mid', x: 63, y: 42, level: 'low' },
+        { id: 'ref-outlet-right', x: 86, y: 42, level: 'high' },
+        { id: 'ref-outlet-bottom', x: 84, y: 70, level: 'low' },
+      ];
     },
     actualTail() {
       const list = this.actualSeries || [];
@@ -300,13 +541,30 @@ export default {
     },
   },
   onShow() {
+    this.pageActive = true;
     this.motionReady = false;
+    this.updateMapViewport();
     this.$nextTick(() => {
       this.motionReady = true;
     });
     this.loadOverview();
   },
+  onHide() {
+    this.pageActive = false;
+    this.clearAnimTimers();
+  },
+  onUnload() {
+    this.pageActive = false;
+    this.clearAnimTimers();
+  },
   methods: {
+    displayZoneTitle,
+    formatPointMapLabel,
+    formatPointMarkerLabel,
+    clearAnimTimers() {
+      (this.animTimers || []).forEach((t) => clearInterval(t));
+      this.animTimers = [];
+    },
     animateNumber(fromValue, toValue, setValue, duration = 480) {
       const from = Number(fromValue || 0);
       const to = Number(toValue || 0);
@@ -321,17 +579,27 @@ export default {
       }
       const start = Date.now();
       const timer = setInterval(() => {
+        if (!this.pageActive) {
+          clearInterval(timer);
+          const off = this.animTimers.indexOf(timer);
+          if (off >= 0) this.animTimers.splice(off, 1);
+          return;
+        }
         const progress = Math.min(1, (Date.now() - start) / duration);
         const eased = 1 - Math.pow(1 - progress, 3);
         const next = from + delta * eased;
         setValue(Number(next.toFixed(1)));
         if (progress >= 1) {
           clearInterval(timer);
+          const idx = this.animTimers.indexOf(timer);
+          if (idx >= 0) this.animTimers.splice(idx, 1);
           setValue(Number(to.toFixed(1)));
         }
       }, 16);
+      this.animTimers.push(timer);
     },
     animateOverviewNumbers() {
+      this.clearAnimTimers();
       this.animateNumber(this.animatedWorkbench.pendingDispatch, this.workbench.pendingDispatch, (v) => {
         this.animatedWorkbench.pendingDispatch = Math.max(0, Math.round(v));
       });
@@ -354,22 +622,26 @@ export default {
           request({ url: '/dashboard/overview' }),
           request({ url: '/monitor/map' })
         ]);
+        if (!this.pageActive) return;
         if (overview?.code === 200 && overview.data) {
           this.realTimeData = overview.data.realTimeData || this.realTimeData;
           this.prediction6h = overview.data.prediction_6h || [];
           this.actualSeries = overview.data.actual_series || [];
           this.workbench = overview.data.workbench || { pendingDispatch: 0, inProgress: 0 };
-          this.animateOverviewNumbers();
+          if (this.pageActive) this.animateOverviewNumbers();
           const preds = this.prediction6h.map((x) => x.predicted || 0);
           const acts = this.actualSeries.map((x) => x.vocs || 0);
           this.predMax = Math.max(1, ...preds, ...acts, this.realTimeData.vocs || 0);
-          this.$nextTick(() => this.measurePredPlot());
+          this.$nextTick(() => {
+            if (this.pageActive) this.measurePredPlot();
+          });
         }
         if (mapRes?.code === 200 && mapRes.data) {
           this.mapAreas = mapRes.data.areas || [];
           this.mapPoints = mapRes.data.points || [];
           this.nearestAlertId = mapRes.data.nearestAlertId;
           this.ownedAreaNames = mapRes.data.ownedAreaNames || [];
+          this.mapPanel = null;
           this.selectedPoint = this.mapPoints.find(item => item.id === this.nearestAlertId) || this.mapPoints[0] || null;
           const ownFirst = this.mapAreas.find((item) => item.canView) || null;
           if (this.selectedPoint) {
@@ -381,6 +653,9 @@ export default {
             }
           } else {
             this.selectedArea = ownFirst;
+          }
+          if (this.selectedArea && this.selectedArea.canView) {
+            this.syncMapPanelFromArea(this.selectedArea);
           }
         }
       } catch (error) {
@@ -402,6 +677,7 @@ export default {
       this.selectedArea = area;
       const first = (this.pointsByArea[area.name] || [])[0];
       if (first) this.selectedPoint = first;
+      this.syncMapPanelFromArea(area);
     },
     selectPoint(area, point) {
       if (!area.canView) {
@@ -410,6 +686,7 @@ export default {
       }
       this.selectedArea = area;
       this.selectedPoint = point;
+      this.syncMapPanelFromArea(area);
     },
     focusNearestAlert() {
       const target = this.mapPoints.find(item => item.id === this.nearestAlertId);
@@ -418,13 +695,15 @@ export default {
         this.selectedArea = this.mapAreas.find(item => item.name === target.areaName && item.canView) || null;
         if (!this.selectedArea) {
           uni.showToast({ title: '告警不在您负责区域内', icon: 'none' });
+          return;
         }
+        this.syncMapPanelFromArea(this.selectedArea);
         return;
       }
       uni.showToast({ title: '暂无高等级告警定位', icon: 'none' });
     },
     focusMyArea() {
-      const own = this.plantOverlays[0];
+      const own = (this.mapAreas || []).find((a) => a.canView);
       if (own) {
         this.selectArea(own);
         return;
@@ -472,37 +751,219 @@ export default {
       this.pinchStartDistance = 0;
       this.pinchStartScale = this.mapScale;
     },
-    openPaintingWorkshop() {
-      const paintArea = (this.mapAreas || []).find((a) => String(a.name || '').includes('涂装') && a.canView);
-      if (!paintArea) {
-        uni.showToast({ title: '无权限查看涂装车间', icon: 'none' });
+    updateMapViewport() {
+      try {
+        let w = 375;
+        if (typeof uni.getWindowInfo === 'function') {
+          const info = uni.getWindowInfo();
+          w = Number(info?.windowWidth || w);
+        } else if (typeof uni.getWindowInfoSync === 'function') {
+          const info = uni.getWindowInfoSync();
+          w = Number(info?.windowWidth || w);
+        } else if (typeof uni.getSystemInfoSync === 'function') {
+          const info = uni.getSystemInfoSync();
+          w = Number(info?.windowWidth || w);
+        }
+        // 兼顾小屏与大屏，保持地图在首屏可完整查看
+        const h = Math.max(300, Math.min(460, Math.round(w * 0.72)));
+        this.mapViewportHeight = h;
+      } catch (e) {
+        this.mapViewportHeight = 360;
+      }
+    },
+    isOwnedZoneKey(key) {
+      const zoneByKey = {
+        coating: '喷涂生产厂房',
+        stack: '排口烟囱区',
+        rotor: '转轮吸附厂房',
+        rto: 'RTO 主处理厂房',
+        utility: '公辅燃烧区',
+        public: '监测附属区',
+      };
+      const zn = zoneByKey[key];
+      if (!zn) return false;
+      const a = (this.mapAreas || []).find((x) => x.name === zn);
+      return !!(a && a.canView);
+    },
+    syncMapPanelFromArea(area) {
+      if (!area || !area.canView) return;
+      const subByZone = {
+        喷涂生产厂房: '涂装车间位于喷涂生产厂房内，您负责的区域',
+        排口烟囱区: '排口烟囱工艺单元，您负责的区域',
+      };
+      this.mapPanel = {
+        title: this.displayZoneTitle(area.name),
+        sub: subByZone[area.name] || '您负责的区域',
+        canView: true,
+        deviceCount: area.deviceCount,
+        onlineRate: area.onlineRate,
+        alertCount: area.alertCount,
+        avgVocs: area.avgVocs,
+        level: area.level,
+      };
+    },
+    openBuildingFromKey(key) {
+      const zoneByKey = {
+        coating: '喷涂生产厂房',
+        stack: '排口烟囱区',
+        rotor: '转轮吸附厂房',
+        rto: 'RTO 主处理厂房',
+        utility: '公辅燃烧区',
+        public: '监测附属区',
+      };
+      const name = zoneByKey[key];
+      const area = (this.mapAreas || []).find((a) => a.name === name);
+      if (!area) {
+        this.selectedArea = null;
+        this.selectedPoint = null;
+        this.mapPanel = null;
+        uni.showToast({ title: '暂无该区域数据', icon: 'none' });
         return;
       }
-      this.selectArea(paintArea);
-      uni.showToast({ title: '已定位涂装车间', icon: 'none' });
+      if (!area.canView) {
+        this.selectedArea = null;
+        this.selectedPoint = null;
+        this.mapPanel = null;
+        uni.showToast({ title: '非您负责区域', icon: 'none' });
+        return;
+      }
+      this.selectArea(area);
+    },
+    externalMarkerStyle(area) {
+      const x = Number(area.x || 0);
+      const y = Number(area.y || 0);
+      const w = Number(area.w || 18);
+      const h = Number(area.h || 24);
+      const cx = x + w / 2;
+      const cy = y + h / 2;
+      return {
+        left: `${Math.max(6, Math.min(94, cx))}%`,
+        top: `${Math.max(10, Math.min(90, cy))}%`,
+      };
+    },
+    zoneBubbleStyle(zone) {
+      return {
+        left: `${Math.max(8, Math.min(92, Number(zone.left || 50)))}%`,
+        top: `${Math.max(10, Math.min(84, Number(zone.top || 50)))}%`,
+      };
+    },
+    zoneNameByKey(key) {
+      const zoneByKey = {
+        coating: '喷涂生产厂房',
+        stack: '排口烟囱区',
+        rotor: '转轮吸附厂房',
+        rto: 'RTO 主处理厂房',
+        utility: '公辅燃烧区',
+        public: '监测附属区',
+      };
+      return zoneByKey[key] || '';
+    },
+    shouldShowZoneBubble(zone) {
+      if (this.showMapDetail) return true;
+      const areaName = this.zoneNameByKey(zone?.key);
+      if (!areaName) return true;
+      // 同一区域默认只显示一种信息源：有点位短标签时隐藏区域气泡，降低交错
+      return !this.visiblePointAreaNames.has(areaName);
+    },
+    zoneBubbleBox(left, top) {
+      const cx = Number(left || 50);
+      const cy = Number(top || 50);
+      // 近似区域气泡尺寸（百分比），用于轻量碰撞规避
+      const halfW = 9;
+      const halfH = 4;
+      return { l: cx - halfW, r: cx + halfW, t: cy - halfH, b: cy + halfH };
+    },
+    enforceBubbleRowSpacing(zones) {
+      // 同一行最小水平间距约束：不够则下移一行，避免文字打架
+      const minGap = 13;
+      const rowBand = 8;
+      const rowDrop = 9;
+      const placed = [];
+      return (zones || []).map((zone) => {
+        const out = { ...zone };
+        for (let i = 0; i < placed.length; i += 1) {
+          const prev = placed[i];
+          const sameRow = Math.abs(Number(prev.top) - Number(out.top)) <= rowBand;
+          const closeX = Math.abs(Number(prev.left) - Number(out.left)) < minGap;
+          if (sameRow && closeX) {
+            out.top = Math.min(84, Number(out.top) + rowDrop);
+          }
+        }
+        placed.push(out);
+        return out;
+      });
+    },
+    pointLabelBox(point) {
+      const x = Number(point?.x ?? 50);
+      const y = Number(point?.y ?? 50);
+      const areaName = String(point?.areaName || '').trim();
+      const below = areaName === '监测附属区';
+      if (below) return { l: x - 8, r: x + 8, t: y + 3, b: y + 10 };
+      return { l: x - 8, r: x + 8, t: y - 13, b: y - 5 };
+    },
+    boxesOverlap(a, b) {
+      return !(a.r < b.l || a.l > b.r || a.b < b.t || a.t > b.b);
+    },
+    pickBubblePlacement(zone, offsets, pointBoxes, occupiedBoxes) {
+      const baseLeft = Number(zone.left || 50);
+      const baseTop = Number(zone.top || 50);
+      for (let i = 0; i < offsets.length; i += 1) {
+        const off = offsets[i];
+        const left = Math.max(8, Math.min(92, baseLeft + off.dx));
+        const top = Math.max(10, Math.min(84, baseTop + off.dy));
+        const box = this.zoneBubbleBox(left, top);
+        const hitPoint = pointBoxes.some((b) => this.boxesOverlap(box, b));
+        const hitZone = occupiedBoxes.some((b) => this.boxesOverlap(box, b));
+        if (!hitPoint && !hitZone) return { ...zone, left, top };
+      }
+      return { ...zone, left: baseLeft, top: baseTop };
+    },
+    isAlwaysVisiblePoint(point) {
+      // 默认层级下仅保留一个“监测点位”（喷涂车间附近）；放大后展示全部
+      if (this.showMapDetail) return true;
+      return this.primaryMonitorPointId != null && point?.id === this.primaryMonitorPointId;
+    },
+    mapPointCapStyle(point) {
+      if (this.showMapDetail) return {};
+      const byAreaOffset = {
+        排口烟囱区: { dx: 0, dy: -58 },
+        喷涂生产厂房: { dx: -12, dy: -62 },
+        转轮吸附厂房: { dx: 0, dy: -56 },
+        'RTO 主处理厂房': { dx: 10, dy: -56 },
+        公辅燃烧区: { dx: 18, dy: -56 },
+        监测附属区: { dx: 16, dy: 44 },
+      };
+      const off = byAreaOffset[String(point?.areaName || '').trim()] || { dx: 0, dy: -56 };
+      return {
+        transform: `translate3d(calc(-50% + ${off.dx}rpx), ${off.dy}rpx, 0)`,
+      };
+    },
+    mapPointStyle(point) {
+      const x = Number(point && point.x != null ? point.x : 50);
+      const y = Number(point && point.y != null ? point.y : 50);
+      return {
+        left: `${Math.max(4, Math.min(96, x))}%`,
+        top: `${Math.max(8, Math.min(90, y))}%`,
+      };
+    },
+    selectPointByMap(point) {
+      const area = (this.mapAreas || []).find((a) => a.name === point.areaName && a.canView);
+      if (!area) {
+        uni.showToast({ title: '无权限查看该点位', icon: 'none' });
+        return;
+      }
+      this.selectPoint(area, point);
     },
     areaOverlayStyle(area) {
-      const name = String(area.name || '');
-      if (name.includes('涂装')) {
-        return { left: '69%', top: '30%', width: '14%', height: '13%', minHeight: '88rpx' };
-      }
       return {
         left: `${Math.max(2, Math.min(88, area.x || 5))}%`,
         top: `${Math.max(6, Math.min(84, area.y || 8))}%`,
-        width: `${Math.max(12, Math.min(28, area.w || 16))}%`,
-        height: `${Math.max(10, Math.min(22, area.h || 12))}%`,
-        minHeight: '88rpx',
+        width: `${Math.max(12, Math.min(32, area.w || 16))}%`,
+        height: `${Math.max(10, Math.min(52, area.h || 12))}%`,
       };
     },
     formatMetricLabel(key) {
-      const k = String(key || '');
-      const map = {
-        coating_flow: '涂装风量',
-        coating_conc: '涂装浓度',
-        coating_temp: '涂装温度',
-        coating_pressure: '涂装压力',
-      };
-      return map[k] || k;
+      return displaySensorFieldLabel(key);
     },
     trendLabel(trend) {
       if (trend === 'up') return '上升';
@@ -515,9 +976,10 @@ export default {
       return '绿色正常';
     },
     measurePredPlot() {
+      if (!this.pageActive) return;
       const q = uni.createSelectorQuery().in(this);
       q.select('.pred-chart').boundingClientRect((rect) => {
-        if (!rect) return;
+        if (!this.pageActive || !rect) return;
         this.predPlotSize = { w: rect.width || 1, h: rect.height || 1 };
       }).exec();
     },
@@ -551,31 +1013,96 @@ export default {
 .legend-dot.medium { background:#ff9500; border-color:#d48618; }
 .legend-dot.high { background:#ff4d67; border-color:#dd5175; }
 .legend-text { font-size:18rpx; color:#6f638f; }
-.map-area { width:100%; border-radius:24rpx; overflow:auto; background:linear-gradient(180deg,#ffffff 0%,#f7f1ff 100%); box-shadow:inset 0 0 0 1rpx rgba(123,31,162,.08); }
-.map-zoom-wrap { width:100%; height:560rpx; overflow:auto; }
-.plant-canvas { position:relative; width:100%; min-width:720rpx; height:560rpx; padding:14rpx; transform-origin: top left; transition: transform .16s ease; }
-.plant-grid { position:absolute; inset:12rpx; border-radius:12rpx; opacity:0.45; background-image:linear-gradient(rgba(123,31,162,.06) 1px, transparent 1px), linear-gradient(90deg, rgba(123,31,162,.06) 1px, transparent 1px); background-size:36rpx 36rpx; pointer-events:none; z-index:0; }
-.plant-border { position:absolute; inset:12rpx; border:3rpx solid #7b1fa2; border-radius:14rpx; z-index:0; }
-.plant-node { position:absolute; z-index:1; display:flex; align-items:center; justify-content:center; text-align:center; color:#54107a; font-size:19rpx; font-weight:800; line-height:1.25; padding:6rpx; background:#f5f5f5; border:2rpx solid #7b1fa2; border-radius:10rpx; box-shadow:0 4rpx 12rpx rgba(123,31,162,.08); }
-.desulfurization { left:8%; top:12%; width:84rpx; height:84rpx; border-radius:50%; background:linear-gradient(145deg,#bb86fc 0%,#e1bee7 100%); }
-.chimney { left:21%; top:8%; width:26rpx; height:180rpx; border-radius:8rpx; background:linear-gradient(180deg,#ffffff 0%,#e8e0f0 45%,#f5f5f5 100%); }
-.cooling-a { left:34%; top:8%; width:110rpx; height:170rpx; border-radius:55rpx / 85rpx; }
-.cooling-b { left:50%; top:8%; width:110rpx; height:170rpx; border-radius:55rpx / 85rpx; }
-.main-workshop { left:25%; top:44%; width:300rpx; height:110rpx; background:linear-gradient(180deg,rgba(187,134,252,.85) 0%,rgba(187,134,252,.55) 100%); font-size:20rpx; }
-.material-corridor { left:10%; top:78%; width:520rpx; height:44rpx; background:linear-gradient(90deg,rgba(187,134,252,.5) 0%,rgba(187,134,252,.25) 100%); border-radius:8rpx; }
-.auxiliary-a { left:70%; top:50%; width:96rpx; height:78rpx; }
-.auxiliary-b { left:82%; top:60%; width:94rpx; height:92rpx; }
-.power-zone { left:79%; top:42%; width:124rpx; height:66rpx; background:#faf8ff; }
-.painting-shell { left:69%; top:30%; width:14%; height:13%; min-height:72rpx; z-index:1; background:linear-gradient(180deg,#ffcdd2 0%,#f8bbd9 100%); border-width:3rpx; font-size:14rpx; color:#7b1fa2; opacity:0.92; }
-.area-overlay { position:absolute; padding:10rpx; border-radius:12rpx; border:3rpx solid #7b1fa2; background:rgba(243,229,245,.96); z-index:4; box-sizing:border-box; display:flex; flex-direction:column; justify-content:center; }
-.area-overlay.active { box-shadow:0 12rpx 28rpx rgba(123,31,162,.28); border-color:#5e1380; transform:scale(1.02); }
-.area-overlay.low { background:rgba(238,249,241,.96); border-color:#2f9d57; }
-.area-overlay.medium { background:rgba(255,246,232,.96); border-color:#d48618; }
-.area-overlay.high { background:rgba(255,238,242,.96); border-color:#dd5175; }
-.overlay-badge { position:absolute; top:6rpx; right:8rpx; font-size:12rpx; font-weight:800; color:#dd5175; background:#fff; padding:2rpx 8rpx; border-radius:999rpx; border:1rpx solid #ffc9d4; }
-.overlay-title { display:block; color:#4c0f71; font-size:20rpx; font-weight:800; line-height:1.25; padding-right:56rpx; }
-.overlay-meta { display:block; margin-top:6rpx; color:#5e5478; font-size:16rpx; line-height:1.35; }
-.overlay-hint { display:block; margin-top:6rpx; font-size:14rpx; color:#7e7299; }
+.map-area { width:100%; border-radius:24rpx; overflow:auto; background:linear-gradient(180deg,#172343 0%,#0b1322 100%); box-shadow:inset 0 0 0 1rpx rgba(95,122,191,.22); }
+.map-zoom-wrap { width:100%; min-height:560rpx; max-height:720rpx; overflow:auto; -webkit-overflow-scrolling:touch; }
+.map-zoom-wrap.map-zoom-detail { padding:28rpx 12rpx 12rpx; box-sizing:border-box; }
+.plant-canvas { position:relative; width:100%; min-width:720rpx; min-height:600rpx; height:600rpx; padding:14rpx; transform-origin: top left; transition: transform .16s ease, min-height .2s ease; box-sizing:border-box; overflow:visible; }
+.plant-canvas.zoom-detail { min-height:640rpx; height:640rpx; }
+.plant-campus { border-radius:16rpx; overflow:visible; }
+.plant-campus.zoom-detail .campus-grass { opacity:1; filter:saturate(1.08); }
+.campus-bg { position:absolute; inset:12rpx; border-radius:14rpx; background:radial-gradient(ellipse 70% 55% at 40% 22%, rgba(122,166,255,.14), transparent 55%), linear-gradient(180deg, rgba(23,35,67,.92), rgba(8,15,31,.98)); z-index:0; }
+.campus-grass { position:absolute; left:9%; right:9%; top:18%; bottom:14%; border-radius:12rpx; background:linear-gradient(180deg,#7a9458 0%,#5f7a48 55%,#4d663c 100%); box-shadow:inset 0 0 0 2rpx rgba(0,0,0,.12); z-index:1; opacity:0.96; }
+.campus-road { position:absolute; background:#2a3347; z-index:2; box-shadow:inset 0 0 0 1rpx rgba(255,255,255,.06); }
+.campus-road-n { left:5%; right:5%; top:10%; height:2.4%; border-radius:6rpx; }
+.campus-road-s { left:5%; right:5%; bottom:10%; height:2.4%; border-radius:6rpx; }
+.campus-road-w { left:5%; width:2.2%; top:12%; bottom:12%; border-radius:6rpx; }
+.campus-road-e { right:5%; width:2.2%; top:12%; bottom:12%; border-radius:6rpx; }
+.road-dash { position:absolute; z-index:3; pointer-events:none; opacity:0.35; }
+.road-dash-h { left:12%; right:12%; top:50%; height:0; border-top:4rpx dashed #d7d9df; }
+.road-dash-v { top:18%; bottom:14%; left:50%; width:0; border-left:4rpx dashed #d7d9df; }
+.cooling-tower { position:absolute; z-index:4; width:10%; height:20%; border-radius:50% 50% 42% 42%; background:linear-gradient(180deg,#f2f4f6 0%,#cfd5de 45%,#e6e8ec 100%); border:2rpx solid rgba(255,255,255,.2); box-shadow:0 6rpx 16rpx rgba(0,0,0,.25); }
+.ct-a { left:46%; top:11%; }
+.ct-b { left:58%; top:12%; }
+.hit-stack { position:absolute; z-index:12; left:3%; top:22%; width:11%; height:28%; border-radius:12rpx; }
+.chimney-column { position:absolute; z-index:5; left:6.5%; top:28%; width:2.8%; height:22%; border-radius:8rpx; background:linear-gradient(180deg,#ffffff 0%,#dfe3ea 55%,#cfd5de 100%); border:2rpx solid rgba(0,0,0,.08); pointer-events:none; }
+.chimney-smoke { position:absolute; z-index:6; left:6%; width:4.5%; height:4.5%; border-radius:50%; background:rgba(230,236,245,.55); filter:blur(2rpx); animation:wg-smoke 3.2s ease-in-out infinite; pointer-events:none; }
+.chimney-smoke.s1 { top:24%; animation-delay:0s; }
+.chimney-smoke.s2 { top:20%; animation-delay:.6s; opacity:.75; }
+.chimney-smoke.s3 { top:16%; animation-delay:1.1s; opacity:.55; }
+@keyframes wg-smoke { 0%,100% { transform:translate(0,0) scale(1); opacity:.55; } 50% { transform:translate(6rpx,-10rpx) scale(1.15); opacity:.85; } }
+.bld { position:absolute; z-index:5; border-radius:10rpx; pointer-events:auto; }
+.bld-roof { position:absolute; left:-2%; right:-2%; top:0; height:22%; border-radius:8rpx 8rpx 4rpx 4rpx; background:linear-gradient(180deg,#2b84d3 0%,#1f6bb5 100%); box-shadow:0 2rpx 0 rgba(0,0,0,.12); }
+.bld-roof--flat { height:16%; background:linear-gradient(180deg,#3a6d9a 0%,#2b84d3 100%); }
+.bld-body { position:absolute; left:0; right:0; top:18%; bottom:0; border-radius:0 0 8rpx 8rpx; background:linear-gradient(180deg,#e6e7ea 0%,#d0d4dc 100%); border:2rpx solid rgba(0,0,0,.06); overflow:hidden; }
+.bld-structure { position:absolute; inset:10%; pointer-events:none; opacity:0.55; }
+.bld-structure--dense { opacity:0.65; }
+.bld-str-line { position:absolute; background:rgba(35,117,193,.42); }
+.bld-str-line.v1 { left:32%; top:8%; bottom:8%; width:2rpx; }
+.bld-str-line.v2 { left:66%; top:8%; bottom:8%; width:2rpx; }
+.bld-str-line.h1 { top:38%; left:8%; right:8%; height:2rpx; }
+.bld-str-line.h2 { top:68%; left:8%; right:8%; height:2rpx; }
+.bld-owned { animation:wg-bld-own 2.4s ease-in-out infinite; }
+@keyframes wg-bld-own { 0%,100% { box-shadow:0 0 0 0 rgba(83,209,255,0); } 50% { box-shadow:0 0 22rpx 4rpx rgba(83,209,255,.45); } }
+.area-own-ring { position:absolute; z-index:4; border-radius:16rpx; pointer-events:none; box-sizing:border-box; border:2rpx solid rgba(83,209,255,.55); animation:wg-area-ring 2s ease-in-out infinite; }
+@keyframes wg-area-ring { 0%,100% { opacity:0.45; transform:scale(1); box-shadow:0 0 0 0 rgba(83,209,255,0); } 50% { opacity:0.95; transform:scale(1.01); box-shadow:0 0 20rpx 6rpx rgba(83,209,255,.35); } }
+.bld-coating { left:15%; top:40%; width:19%; height:28%; }
+.bld-rotor { left:33%; top:40%; width:17%; height:28%; }
+.bld-rto { left:50%; top:36%; width:24%; height:34%; z-index:6; }
+.bld-utility { left:76%; top:40%; width:15%; height:28%; }
+.bld-public { left:72%; top:68%; width:22%; height:15%; }
+.zone-bubble { position:absolute; z-index:24; transform:translate(-50%,-50%); min-width:152rpx; max-width:228rpx; padding:8rpx 12rpx; border-radius:12rpx; background:rgba(5,15,38,.88); border:1rpx solid rgba(112,175,255,.35); box-shadow:0 10rpx 24rpx rgba(0,0,0,.28); text-align:left; }
+.zone-bubble-title { display:block; font-size:20rpx; font-weight:700; color:#eef6ff; line-height:1.25; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.zone-bubble-sub { display:block; margin-top:2rpx; font-size:16rpx; color:rgba(219,233,255,.9); line-height:1.2; }
+.map-point { position:absolute; z-index:40; transform:translate(-50%,-50%); pointer-events:auto; overflow:visible; }
+.map-point-anchor { position:relative; min-width:88rpx; min-height:88rpx; display:flex; align-items:center; justify-content:center; overflow:visible; z-index:1; }
+.map-point-dotlayer { position:relative; width:48rpx; height:48rpx; pointer-events:none; }
+.map-point-core { position:absolute; left:50%; top:50%; width:20rpx; height:20rpx; margin-left:-10rpx; margin-top:-10rpx; border-radius:50%; box-shadow:0 0 16rpx currentColor; border:3rpx solid rgba(255,255,255,.9); z-index:2; }
+.map-point.low .map-point-core { background:#53d1ff; color:#53d1ff; }
+.map-point.medium .map-point-core { background:#ffb347; color:#ffb347; }
+.map-point.high .map-point-core { background:#ff5b61; color:#ff5b61; }
+.map-point-ring { position:absolute; left:50%; top:50%; width:44rpx; height:44rpx; margin-left:-22rpx; margin-top:-22rpx; border-radius:50%; border:3rpx solid currentColor; opacity:.45; animation:wg-pulse 2s ease-out infinite; z-index:1; }
+.map-point.low .map-point-ring { color:#53d1ff; }
+.map-point.medium .map-point-ring { color:#ffb347; }
+.map-point.high .map-point-ring { color:#ff5b61; }
+.map-point.active .map-point-ring { opacity:.75; animation-duration:1.2s; }
+.map-point.ref-only { z-index:32; pointer-events:none; }
+.map-point.ref-only .map-point-dotlayer { width:42rpx; height:42rpx; }
+.map-point.ref-only .map-point-core { width:16rpx; height:16rpx; margin-left:-8rpx; margin-top:-8rpx; }
+.map-point.ref-only .map-point-ring { width:38rpx; height:38rpx; margin-left:-19rpx; margin-top:-19rpx; opacity:.35; }
+@keyframes wg-pulse { 0% { transform:scale(.6); opacity:.6; } 100% { transform:scale(1.35); opacity:0; } }
+.map-point-cap { position:absolute; z-index:41; bottom:100%; left:50%; transform:translate3d(-50%,0,0); margin-bottom:10rpx; max-width:520rpx; min-width:120rpx; padding:10rpx 14rpx; border-radius:12rpx; background:rgba(7,15,31,.92); border:1rpx solid rgba(95,122,191,.55); text-align:center; line-height:1.45; box-sizing:border-box; pointer-events:none; box-shadow:0 10rpx 22rpx rgba(0,0,0,.28); }
+.map-point-cap.compact { min-width:88rpx; max-width:190rpx; padding:6rpx 10rpx; border-radius:10rpx; }
+.map-point-cap.compact::after { content:''; position:absolute; left:50%; top:100%; width:2rpx; height:14rpx; margin-left:-1rpx; background:rgba(149,183,255,.7); border-radius:2rpx; }
+.map-point-cap-txt { display:block; font-size:20rpx; font-weight:700; color:#f0f7ff; white-space:pre-line; word-break:keep-all; word-wrap:break-word; overflow-wrap:break-word; line-height:1.4; }
+.map-point-cap.compact .map-point-cap-txt { font-size:18rpx; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.area-sel-outline { position:absolute; z-index:7; border-radius:14rpx; border:3rpx dashed rgba(83,209,255,.9); box-shadow:0 0 0 2rpx rgba(83,209,255,.15); pointer-events:none; box-sizing:border-box; }
+.area-sel-outline.low { border-color:rgba(52,199,89,.85); box-shadow:0 0 0 2rpx rgba(52,199,89,.12); }
+.area-sel-outline.medium { border-color:rgba(255,179,71,.9); box-shadow:0 0 0 2rpx rgba(255,179,71,.12); }
+.area-sel-outline.high { border-color:rgba(255,91,97,.95); box-shadow:0 0 0 2rpx rgba(255,91,97,.15); }
+.ext-marker { position:absolute; z-index:11; transform:translate(-50%,-50%); pointer-events:none; }
+.ext-dot { width:14rpx; height:14rpx; border-radius:50%; border:3rpx solid rgba(255,255,255,.85); box-shadow:0 0 12rpx currentColor; }
+.ext-marker.low .ext-dot { background:#53d1ff; color:#53d1ff; }
+.ext-marker.medium .ext-dot { background:#ffb347; color:#ffb347; }
+.ext-marker.high .ext-dot { background:#ff5b61; color:#ff5b61; }
+.map-building-panel { margin-top:18rpx; padding:22rpx; border-radius:22rpx; background:linear-gradient(180deg,#f4f6ff 0%,#fff 100%); border:2rpx solid #e2e8ff; }
+.mbp-kicker { display:block; font-size:18rpx; color:#7b61ff; font-weight:700; margin-bottom:8rpx; }
+.mbp-title { display:block; font-size:30rpx; font-weight:800; color:#1f2548; line-height:1.25; }
+.mbp-sub { display:block; margin-top:6rpx; font-size:22rpx; color:#6b7a99; }
+.mbp-stats { margin-top:14rpx; }
+.mbp-muted { margin-top:14rpx; }
+.mbp-line { display:block; font-size:22rpx; color:#3d4663; line-height:1.5; margin-top:8rpx; }
+.mbp-line.light { font-size:20rpx; color:#8c96b5; }
+.mbp-live { margin-top:12rpx; font-size:20rpx; color:#5a6a94; line-height:1.45; }
 .metric-block { margin-top:18rpx; }
 .metric-block-title { display:block; font-size:24rpx; font-weight:800; color:#5e1380; margin-bottom:12rpx; }
 .metric-col { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:12rpx; }

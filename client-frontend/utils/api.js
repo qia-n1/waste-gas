@@ -1,4 +1,4 @@
-const DEFAULT_BASE_URL = 'http://localhost:18003/api/v1';
+const DEFAULT_BASE_URL = 'http://localhost:8002/api/v1';
 const AUTH_TOKEN_KEY = 'authToken';
 const AUTH_USER_KEY = 'authUser';
 const API_BASE_URL_KEY = 'apiBaseUrl';
@@ -10,11 +10,12 @@ function normalizeBaseUrl(baseUrl) {
     return DEFAULT_BASE_URL;
   }
 
+  // 与 client-backend/run.py 端口一致；旧默认 18003 无服务时会导致连接被拒绝
   return value
-    .replace('http://localhost:8002/api/v1', DEFAULT_BASE_URL)
-    .replace('http://127.0.0.1:8002/api/v1', 'http://127.0.0.1:18003/api/v1')
-    .replace('http://localhost:8002', 'http://localhost:18003')
-    .replace('http://127.0.0.1:8002', 'http://127.0.0.1:18003');
+    .replace('http://localhost:18003/api/v1', DEFAULT_BASE_URL)
+    .replace('http://127.0.0.1:18003/api/v1', 'http://127.0.0.1:8002/api/v1')
+    .replace('http://localhost:18003', 'http://localhost:8002')
+    .replace('http://127.0.0.1:18003', 'http://127.0.0.1:8002');
 }
 
 function getStorageValue(key) {

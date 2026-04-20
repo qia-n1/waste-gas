@@ -85,6 +85,19 @@ async def get_map_points(
             )
         ).all()
 
+    # 俯视布局：块区分离、少重叠，便于客户端点击厂房与标点（百分比相对地图画布）
+    # 俯视布局与 admin FactoryScene 厂区顺序一致（百分比相对地图画布）
+    region_layout: dict[str, dict[str, int]] = {
+        '喷涂生产厂房': {'x': 14, 'y': 38, 'w': 20, 'h': 28},
+        '排口烟囱区': {'x': 3, 'y': 22, 'w': 12, 'h': 26},
+        '转轮吸附厂房': {'x': 33, 'y': 38, 'w': 18, 'h': 28},
+        'RTO 主处理厂房': {'x': 50, 'y': 34, 'w': 24, 'h': 34},
+        '公辅燃烧区': {'x': 75, 'y': 38, 'w': 16, 'h': 28},
+        '监测附属区': {'x': 70, 'y': 66, 'w': 24, 'h': 18},
+        # 旧种子数据兼容
+        'A区处理车间': {'x': 9, 'y': 30, 'w': 50, 'h': 52},
+        'B区吸附站': {'x': 62, 'y': 30, 'w': 28, 'h': 56},
+    }
     base_layouts = [
         {'x': 8, 'y': 10, 'w': 38, 'h': 34},
         {'x': 54, 'y': 10, 'w': 38, 'h': 34},
@@ -95,7 +108,7 @@ async def get_map_points(
 
     areas = []
     for idx, zone in enumerate(zones):
-        layout = base_layouts[idx % len(base_layouts)]
+        layout = region_layout.get(zone.name) or base_layouts[idx % len(base_layouts)]
         level = 'low'
         if zone.alert_count >= 2:
             level = 'high'

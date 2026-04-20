@@ -26,7 +26,7 @@
         <text class="empty-title">暂无负责区域</text>
         <text class="empty-desc">请联系管理员分配区域权限</text>
       </view>
-      <view class="list-box" v-for="item in areas" :key="item.name"><text class="list-title">{{ item.name }}</text><text class="list-meta">设备 {{ item.deviceCount }} · 在线率 {{ item.onlineRate }}% · 告警 {{ item.alertCount }}</text></view>
+      <view class="list-box" v-for="item in areas" :key="item.name"><text class="list-title">{{ displayZoneTitle(item.name) }}</text><text class="list-meta">设备 {{ item.deviceCount }}，在线率 {{ item.onlineRate }}％，告警 {{ item.alertCount }}</text></view>
     </view>
 
     <view class="area-card">
@@ -40,7 +40,7 @@
         <text class="empty-title">暂无废气源数据</text>
         <text class="empty-desc">当前筛选下没有可展示数据</text>
       </view>
-      <view class="list-box" v-for="item in sources" :key="item.id"><text class="list-title">{{ item.name }}</text><text class="list-meta">{{ item.areaName }} · {{ item.concentration }} mg/m³ · {{ item.status }}</text></view>
+      <view class="list-box" v-for="item in sources" :key="item.id"><text class="list-title">{{ displaySensorFieldLabel(item.name) }}</text><text class="list-meta">{{ displayZoneTitle(item.areaName) }}，{{ item.concentration }} 毫克每立方米，{{ item.status }}</text></view>
     </view>
 
     <view class="area-card">
@@ -54,13 +54,15 @@
         <text class="empty-title">暂无设备状态</text>
         <text class="empty-desc">请确认设备接入或稍后刷新</text>
       </view>
-      <view class="list-box" v-for="item in deviceStatus" :key="item.deviceId"><text class="list-title">{{ item.deviceName }}</text><text class="list-meta">{{ item.deviceId }} · {{ item.location }} · {{ item.status }}</text></view>
+      <view class="list-box" v-for="item in deviceStatus" :key="item.deviceId"><text class="list-title">{{ item.deviceName }}</text><text class="list-meta">{{ item.deviceId }}，{{ item.location }}，{{ item.status }}</text></view>
     </view>
   </view>
 </template>
 
 <script>
 import { request } from '../../utils/api';
+import { displaySensorFieldLabel } from '../../utils/sensorDisplay';
+import { displayZoneTitle } from '../../utils/zoneDisplay';
 
 export default {
   data() {
@@ -68,6 +70,8 @@ export default {
   },
   onShow() { this.loadAreaData(); },
   methods: {
+    displayZoneTitle,
+    displaySensorFieldLabel,
     async loadAreaData() {
       try {
         const res = await request({ url: '/dashboard/my-area' });
