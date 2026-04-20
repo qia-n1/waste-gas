@@ -145,21 +145,21 @@ export default {
       recordPageSize: 5,
       alert: {
         id: 1,
-        title: 'VOCs 浓度超标',
+        title: '挥发性有机物浓度超标',
         time: '2026-04-13 10:00',
-        description: 'VOCs 浓度达到 65.2 mg/m³，超过阈值 50 mg/m³，持续时间超过 5 分钟',
+        description: '挥发性有机物浓度达到六十五点二毫克每立方米，超过阈值五十毫克每立方米，持续时间超过五分钟',
         level: 'high',
         status: 'unresolved',
         handledAt: null,
         resolveEarliestAt: null,
         canResolve: false,
         deviceId: 'DEV-001',
-        location: '废气处理车间 A',
+        location: '废气处理甲区车间',
         type: '浓度超标',
         predictionCurve: [],
         aiDiagnosis: { reason: '', suggestion: '', similarCases: [], sop: [] },
         aiPlan: null,
-        data: [{ label: 'VOCs 浓度', value: '65.2', unit: 'mg/m³', threshold: '50 mg/m³' }],
+        data: [{ label: '挥发性有机物浓度', value: '65.2', unit: '毫克每立方米', threshold: '五十毫克每立方米' }],
         processingRecords: [{ time: '2026-04-13 10:05', content: '系统自动检测到告警', operator: '系统' }]
       }
     };

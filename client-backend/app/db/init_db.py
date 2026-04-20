@@ -153,19 +153,86 @@ async def seed_if_empty(session: AsyncSession) -> None:
     # Check and seed AreaZone
     zone_exists = await session.scalar(select(AreaZone.id).limit(1))
     if not zone_exists:
+        # 与 admin 端 FactoryScene 建模一致：左起排口烟囱—喷涂—转轮—RTO—公辅，前侧为监测附属（含 1 号排口）
         session.add_all([
-            AreaZone(name='A区处理车间', manager_username='admin', device_count=8, online_rate=98.5, alert_count=2, avg_vocs=23.6),
-            AreaZone(name='B区吸附站', manager_username='admin', device_count=5, online_rate=100.0, alert_count=1, avg_vocs=18.4),
+            AreaZone(name='喷涂生产厂房', manager_username='admin', device_count=8, online_rate=98.5, alert_count=1, avg_vocs=22.4),
+            AreaZone(name='排口烟囱区', manager_username='admin', device_count=2, online_rate=100.0, alert_count=0, avg_vocs=15.0),
+            AreaZone(name='转轮吸附厂房', manager_username='admin', device_count=5, online_rate=100.0, alert_count=0, avg_vocs=18.2),
+            AreaZone(name='RTO 主处理厂房', manager_username='admin', device_count=6, online_rate=99.0, alert_count=2, avg_vocs=44.8),
+            AreaZone(name='公辅燃烧区', manager_username='admin', device_count=4, online_rate=100.0, alert_count=0, avg_vocs=12.6),
+            AreaZone(name='监测附属区', manager_username='admin', device_count=3, online_rate=100.0, alert_count=0, avg_vocs=20.0),
         ])
 
     # Check and seed AreaSourcePoint
     point_exists = await session.scalar(select(AreaSourcePoint.id).limit(1))
     if not point_exists:
         session.add_all([
-            AreaSourcePoint(area_name='A区处理车间', source_name='排口 A-01', x=18, y=32, concentration=18.5, status='正常', level='low', trend='stable', device_id='DEV-001'),
-            AreaSourcePoint(area_name='A区处理车间', source_name='排口 A-02', x=42, y=26, concentration=36.2, status='预警', level='medium', trend='up', device_id='DEV-002'),
-            AreaSourcePoint(area_name='A区处理车间', source_name='排口 A-03', x=64, y=58, concentration=65.2, status='告警', level='high', trend='up', device_id='DEV-003'),
-            AreaSourcePoint(area_name='B区吸附站', source_name='排口 B-01', x=30, y=72, concentration=12.1, status='正常', level='low', trend='down', device_id='DEV-004'),
+            AreaSourcePoint(
+                area_name='喷涂生产厂房',
+                source_name='监测点位',
+                x=22,
+                y=56,
+                concentration=18.5,
+                status='正常',
+                level='low',
+                trend='stable',
+                device_id='DEV-001',
+            ),
+            AreaSourcePoint(
+                area_name='排口烟囱区',
+                source_name='烟囱监测点',
+                x=8,
+                y=36,
+                concentration=24.0,
+                status='正常',
+                level='low',
+                trend='stable',
+                device_id='DEV-002',
+            ),
+            AreaSourcePoint(
+                area_name='转轮吸附厂房',
+                source_name='转轮出口',
+                x=40,
+                y=56,
+                concentration=36.2,
+                status='预警',
+                level='medium',
+                trend='up',
+                device_id='DEV-003',
+            ),
+            AreaSourcePoint(
+                area_name='RTO 主处理厂房',
+                source_name='关键设备',
+                x=62,
+                y=52,
+                concentration=65.2,
+                status='告警',
+                level='high',
+                trend='up',
+                device_id='DEV-004',
+            ),
+            AreaSourcePoint(
+                area_name='公辅燃烧区',
+                source_name='公辅监测点',
+                x=82,
+                y=54,
+                concentration=12.1,
+                status='正常',
+                level='low',
+                trend='down',
+                device_id='DEV-005',
+            ),
+            AreaSourcePoint(
+                area_name='监测附属区',
+                source_name='1号排口',
+                x=82,
+                y=76,
+                concentration=28.0,
+                status='预警',
+                level='medium',
+                trend='up',
+                device_id='DEV-006',
+            ),
         ])
 
     # Check and seed DisposalRecord
@@ -180,7 +247,7 @@ async def seed_if_empty(session: AsyncSession) -> None:
     notification_exists = await session.scalar(select(NotificationMessage.id).limit(1))
     if not notification_exists:
         session.add_all([
-            NotificationMessage(username='admin', title='高等级告警提醒', content='A区处理车间排口 A-03 VOCs 浓度超标，请尽快处理。', category='告警', level='high', is_read=False, created_at=now - timedelta(minutes=45), alert_id=1),
+            NotificationMessage(username='admin', title='高等级告警提醒', content='RTO 主处理厂房 1号排口 VOCs 浓度超标，请尽快处理。', category='告警', level='high', is_read=False, created_at=now - timedelta(minutes=45), alert_id=1),
             NotificationMessage(username='admin', title='设备巡检通知', content='今日 18:00 前请完成 A 区巡检。', category='系统', level='low', is_read=True, created_at=now - timedelta(hours=5), alert_id=None),
         ])
 
@@ -196,8 +263,8 @@ async def seed_if_empty(session: AsyncSession) -> None:
     inspection_exists = await session.scalar(select(InspectionRecord.id).limit(1))
     if not inspection_exists:
         session.add_all([
-            InspectionRecord(username='admin', area_name='A区处理车间', summary='完成风机、管道与阀门巡检，发现排口 A-03 浓度偏高。', created_at=now - timedelta(days=1, hours=2)),
-            InspectionRecord(username='admin', area_name='B区吸附站', summary='吸附站运行平稳，未发现明显异常。', created_at=now - timedelta(days=2, hours=1)),
+            InspectionRecord(username='admin', area_name='RTO 主处理厂房', summary='完成风机、管道与阀门巡检，发现 1 号排口浓度偏高。', created_at=now - timedelta(days=1, hours=2)),
+            InspectionRecord(username='admin', area_name='转轮吸附厂房', summary='转轮与吸附段运行平稳，未发现明显异常。', created_at=now - timedelta(days=2, hours=1)),
         ])
 
     await session.commit()

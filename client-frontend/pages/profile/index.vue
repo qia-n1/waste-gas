@@ -60,7 +60,7 @@
     <view class="profile-card">
       <view class="section-head"><view><text class="section-title">我的处置记录</text><text class="section-desc">可导出</text></view><text class="action-link" @click="exportDisposals">导出</text></view>
       <view class="record-list">
-        <view v-for="item in pagedDisposals" :key="item.id" class="record-item"><text class="record-title">{{ item.result }}</text><text class="record-meta">{{ item.status }} · {{ item.createdAt }}</text></view>
+        <view v-for="item in pagedDisposals" :key="item.id" class="record-item"><text class="record-title">{{ item.result }}</text><text class="record-meta">{{ item.status }}，{{ item.createdAt }}</text></view>
       </view>
       <view v-if="disposals.length" class="pager-row">
         <button class="pager-btn" :disabled="disposalPage <= 1" @click="changeDisposalPage(-1)">上一页</button>
@@ -72,7 +72,7 @@
     <view class="profile-card">
       <view class="section-head"><view><text class="section-title">个人巡检记录</text><text class="section-desc">最近记录</text></view></view>
       <view class="record-list">
-        <view v-for="item in pagedInspections" :key="item.id" class="record-item"><text class="record-title">{{ item.areaName }}</text><text class="record-meta">{{ item.summary }}</text><text class="record-meta">{{ item.createdAt }}</text></view>
+        <view v-for="item in pagedInspections" :key="item.id" class="record-item"><text class="record-title">{{ displayZoneTitle(item.areaName) }}</text><text class="record-meta">{{ item.summary }}</text><text class="record-meta">{{ item.createdAt }}</text></view>
       </view>
       <view v-if="inspections.length" class="pager-row">
         <button class="pager-btn" :disabled="inspectionPage <= 1" @click="changeInspectionPage(-1)">上一页</button>
@@ -85,6 +85,7 @@
 
 <script>
 import { clearAuthState, request } from '../../utils/api';
+import { displayZoneTitle } from '../../utils/zoneDisplay';
 
 export default {
   data() {
@@ -109,7 +110,11 @@ export default {
   },
   computed: {
     userAvatar() { return this.userInfo.username ? this.userInfo.username.charAt(0).toUpperCase() : 'U'; },
-    areaText() { return Array.isArray(this.userInfo.areas) && this.userInfo.areas.length ? this.userInfo.areas.join('、') : '未分配'; },
+    areaText() {
+      const list = this.userInfo.areas;
+      if (!Array.isArray(list) || !list.length) return '未分配';
+      return list.map((x) => displayZoneTitle(x)).join('、');
+    },
     disposalTotalPages() { return Math.max(1, Math.ceil(this.disposals.length / this.pageSize)); },
     inspectionTotalPages() { return Math.max(1, Math.ceil(this.inspections.length / this.pageSize)); },
     pagedDisposals() {
@@ -123,6 +128,7 @@ export default {
   },
   onShow() { this.loadProfile(); },
   methods: {
+    displayZoneTitle,
     async loadProfile() {
       this.loading = true;
       try {

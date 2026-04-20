@@ -26,7 +26,7 @@
             "port" : 8080,
             "proxy" : {
                 "/api" : {
-                    "target" : "http://localhost:18003",
+                    "target" : "http://localhost:8002",
                     "changeOrigin" : true,
                     "secure" : false
                 }

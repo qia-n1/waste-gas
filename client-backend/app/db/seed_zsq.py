@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
@@ -22,7 +22,8 @@ from app.models.entities import (
 )
 
 ZSQ = 'zsq'
-COATING_AREA = '涂装车间'
+# 与 admin FactoryScene「喷涂生产厂房」及 init_db 区域名一致（涂装产线在该厂房内）
+COATING_AREA = '喷涂生产厂房'
 COATING_DEVICE_ID = 'DEV-COAT-001'
 COATING_METRICS: list[tuple[str, str, str, float, float, float]] = [
     ('coating_flow', '涂装风量', 'm3/h', 1200.0, 980.0, 1120.0),
@@ -59,6 +60,8 @@ async def ensure_zsq_test_data(session: AsyncSession) -> None:
         )
     await session.flush()
 
+    await _migrate_zsq_legacy_coating_area(session)
+
     # 已存在库里的演示告警若仍为「处理中」，升级为「持续跟踪」以匹配 48h 结案规则
     rto_alert = await session.scalar(select(Alert).where(Alert.title == 'RTO 入口温度短时上升').limit(1))
     if rto_alert and rto_alert.status == 'accepted':
@@ -72,7 +75,7 @@ async def ensure_zsq_test_data(session: AsyncSession) -> None:
             session.add(AreaZone(manager_username=ZSQ, **z))
 
     for dev in (
-        (COATING_DEVICE_ID, '涂装车间总排监测柜', '192.168.1.121', COATING_AREA),
+        (COATING_DEVICE_ID, '喷涂线总排监测柜', '192.168.1.121', COATING_AREA),
     ):
         did, dname, ip, loc = dev
         if not await session.scalar(select(DeviceInfo.id).where(DeviceInfo.device_id == did).limit(1)):
@@ -607,8 +610,30 @@ async def ensure_zsq_test_data(session: AsyncSession) -> None:
     await session.commit()
 
 
+async def _migrate_zsq_legacy_coating_area(session: AsyncSession) -> None:
+    """历史种子用「涂装车间」作区域名，与 admin 地图「喷涂生产厂房」不一致；幂等迁移并合并重复区域。"""
+    await session.execute(
+        update(AreaSourcePoint).where(AreaSourcePoint.area_name == '涂装车间').values(area_name=COATING_AREA)
+    )
+    await session.execute(
+        update(DeviceInfo).where(DeviceInfo.location == '涂装车间').values(location=COATING_AREA)
+    )
+    legacy = await session.scalar(
+        select(AreaZone).where(AreaZone.manager_username == ZSQ, AreaZone.name == '涂装车间').limit(1)
+    )
+    if legacy is None:
+        return
+    # 区域名全局唯一：若已存在「喷涂生产厂房」（任意负责人），不能对 legacy 再改名，只能合并行
+    modern = await session.scalar(select(AreaZone).where(AreaZone.name == COATING_AREA).limit(1))
+    if modern is not None and modern.id != legacy.id:
+        modern.manager_username = ZSQ
+        await session.delete(legacy)
+    else:
+        legacy.name = COATING_AREA
+
+
 async def _normalize_zsq_scope(session: AsyncSession, now: datetime) -> None:
-    """将 zsq 相关展示数据统一到涂装车间上下文。"""
+    """将 zsq 相关展示数据统一到喷涂生产厂房（内含涂装）上下文。"""
     metric_cycle = COATING_METRICS
     alerts = (await session.scalars(select(Alert).order_by(Alert.created_at.asc()))).all()
     for idx, alert in enumerate(alerts):

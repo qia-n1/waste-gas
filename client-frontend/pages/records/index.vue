@@ -20,7 +20,7 @@
       <view v-if="!disposals.length" class="empty-tip"><text>暂无处置记录</text></view>
       <view class="records-card" v-for="item in pagedDisposals" :key="'d-' + item.id">
         <text class="record-title">{{ item.result }}</text>
-        <text class="record-meta">告警 ID：{{ item.alertId }} · {{ item.status }}</text>
+        <text class="record-meta">告警编号 {{ item.alertId }}，{{ item.status }}</text>
         <text class="record-meta">{{ item.notes }}</text>
         <text class="record-meta">{{ item.createdAt }}</text>
       </view>
@@ -41,7 +41,7 @@
       <text class="list-title">历史巡检</text>
       <view v-if="!inspections.length" class="empty-tip"><text>暂无巡检记录</text></view>
       <view class="records-card" v-for="item in pagedInspections" :key="'i-' + item.id">
-        <text class="record-title">{{ item.areaName }}</text>
+        <text class="record-title">{{ displayZoneTitle(item.areaName) }}</text>
         <text class="record-meta">{{ item.summary }}</text>
         <text class="record-meta">{{ item.createdAt }}</text>
       </view>
@@ -56,6 +56,7 @@
 
 <script>
 import { request } from '../../utils/api';
+import { displayZoneTitle } from '../../utils/zoneDisplay';
 
 export default {
   data() {
@@ -93,6 +94,7 @@ export default {
     this.loadInspections();
   },
   methods: {
+    displayZoneTitle,
     async loadDisposals() {
       try {
         const res = await request({ url: '/profile/disposals' });
