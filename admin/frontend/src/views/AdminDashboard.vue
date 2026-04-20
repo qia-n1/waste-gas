@@ -66,6 +66,7 @@ const decisionSummary = computed(
 const decisionSuggestions = computed(
   () => alertsStore.diagnosis?.recommendations ?? dashboardStore.overview.decision.suggestions,
 );
+const decisionRagCard = computed(() => alertsStore.diagnosis?.ragCard ?? null);
 
 const loadData = async () => {
   try {
@@ -177,6 +178,7 @@ onBeforeUnmount(() => {
         :summary="decisionSummary"
         :suggestions="decisionSuggestions"
         :forecast-series="dashboardStore.overview.trend.forecastSeries"
+        :rag-card="decisionRagCard"
         @acknowledge="handleAcknowledge"
         @export="handleExport"
       />

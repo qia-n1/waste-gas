@@ -12,6 +12,21 @@ import httpx
 from config import settings
 
 
+# ---------------------------------------------------------------------------
+# RAG 惰性导入：失败也不影响服务，诊断接口会回退到原有启发式建议
+# 日志走 ASCII，避免 Windows GBK 控制台打印 emoji 崩溃。
+# ---------------------------------------------------------------------------
+try:
+    from rag import get_warning_diagnose as _rag_get_warning_diagnose  # type: ignore
+
+    RAG_AVAILABLE = True
+    print("[RAG] module loaded, diagnosis endpoint will attach SOP card")
+except Exception as _rag_exc:  # pragma: no cover - 依赖缺失时走兜底
+    _rag_get_warning_diagnose = None  # type: ignore
+    RAG_AVAILABLE = False
+    print(f"[RAG] module unavailable ({_rag_exc}); diagnosis will use built-in suggestions only")
+
+
 WARNING_THRESHOLD = 80.0
 CRITICAL_THRESHOLD = 100.0
 SENSOR_INTERVAL_MINUTES = 15
@@ -664,6 +679,19 @@ async def acknowledge_alert(alert_id: str) -> dict[str, Any]:
         }
 
 
+def _invoke_rag_diagnosis(
+    vocs: str, shap_reason: str, shap_score: str
+) -> Optional[Dict[str, Any]]:
+    """同步调用 RAG 诊断，异常时返回 None，由上层走兜底。"""
+    if not RAG_AVAILABLE or _rag_get_warning_diagnose is None:
+        return None
+    try:
+        return _rag_get_warning_diagnose(vocs, shap_reason, shap_score)
+    except Exception as exc:  # pragma: no cover - 网络/模型异常兜底
+        print(f"⚠️  RAG 诊断调用失败：{exc}")
+        return None
+
+
 async def get_alert_diagnosis(alert_id: str) -> dict[str, Any]:
     overview = await get_dashboard_overview()
     attribution = overview.get("attribution")
@@ -686,7 +714,24 @@ async def get_alert_diagnosis(alert_id: str) -> dict[str, Any]:
         ]
         group_contributions = []
 
-    return {
+    # ------------------------------------------------------------------
+    # RAG 增强：基于 top1 feature 生成 SOP / 安全红线
+    # ------------------------------------------------------------------
+    rag_card: Optional[Dict[str, Any]] = None
+    if RAG_AVAILABLE and attribution and attribution.get("feature_contributions"):
+        top = attribution["feature_contributions"][0]
+        feature = str(top.get("feature", ""))
+        meta = SENSOR_LABEL_META.get(feature, {"label": feature})
+        shap_reason = f"{meta['label']}异常"
+        shap_score = f"{_as_float(top.get('ratio')) * 100:.0f}%"
+        current_vocs = overview["metrics"].get("currentVocs", 0)
+        vocs_value = f"{_as_float(current_vocs):.1f}"
+
+        rag_card = await asyncio.to_thread(
+            _invoke_rag_diagnosis, vocs_value, shap_reason, shap_score
+        )
+
+    response: Dict[str, Any] = {
         "alertId": alert_id,
         "summary": overview["decision"]["summary"],
         "recommendations": overview["decision"]["suggestions"],
@@ -696,3 +741,18 @@ async def get_alert_diagnosis(alert_id: str) -> dict[str, Any]:
         "target": attribution.get("target") if attribution else None,
         "totalIncrement": attribution.get("total_increment") if attribution else None,
     }
+
+    if rag_card:
+        response["ragCard"] = {
+            "title": rag_card.get("title", ""),
+            "suggestionShort": rag_card.get("suggestion_short", ""),
+            "sopSteps": rag_card.get("sop_steps", []),
+            "safetyRedline": rag_card.get("safety_redline", ""),
+            "standard": rag_card.get("standard", ""),
+            "level": rag_card.get("level", ""),
+            "reason": rag_card.get("reason", ""),
+        }
+    else:
+        response["ragCard"] = None
+
+    return response

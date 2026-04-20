@@ -1,4 +1,3 @@
-from sentence_transformers import SentenceTransformer
 import json
 import os
 from dotenv import load_dotenv
@@ -21,6 +20,8 @@ MODEL_NAME = os.getenv("LLM_MODEL", "deepseek-chat")
 # 获取当前文件所在目录
 RAG_DIR = os.path.dirname(os.path.abspath(__file__))
 VECTOR_DB_PATH = os.path.join(RAG_DIR, "vector_db", "rto_spec.pkl")
+# ✅ 模型放在 rag/models/bge-large-zh/ 下面（与 README 和 SimpleVectorDB 保持一致）
+MODEL_PATH = os.path.join(RAG_DIR, "models", "bge-large-zh")
 
 try:
     llm_client = OpenAI(api_key=API_KEY, base_url=API_BASE)
@@ -30,21 +31,11 @@ except Exception as e:
     llm_client = None
 
 # ==============================
-# 1. 加载本地模型 & 向量库
+# 1. 连接本地向量库（BGE 模型由 SimpleVectorDB 内部懒加载，不在此处重复加载）
 # ==============================
-print("\n🚀 正在加载本地BGE模型...")
-try:
-    # 模型路径：从 rag 目录向上两级到项目根目录，再进入 models
-    MODEL_PATH = os.path.join(RAG_DIR, "..", "..", "models", "bge-large-zh")
-    model = SentenceTransformer(MODEL_PATH)
-    print("✅ 本地模型加载完成")
-except Exception as e:
-    print(f"❌ 模型加载失败: {str(e)}")
-    model = None
-
 print("\n🔗 正在连接本地向量库...")
 try:
-    vector_db = SimpleVectorDB(VECTOR_DB_PATH)
+    vector_db = SimpleVectorDB(VECTOR_DB_PATH, model_path=MODEL_PATH)
     print("✅ 向量库连接成功")
 except Exception as e:
     print(f"❌ 向量库连接失败: {str(e)}")

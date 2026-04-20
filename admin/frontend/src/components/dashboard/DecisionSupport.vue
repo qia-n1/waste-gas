@@ -2,7 +2,12 @@
 import { computed, ref } from "vue";
 import dayjs from "dayjs";
 
-import type { DashboardMetrics, KeyParameter, TrendPoint } from "@/types/dashboard";
+import type {
+  DashboardMetrics,
+  KeyParameter,
+  RagCard,
+  TrendPoint,
+} from "@/types/dashboard";
 
 const props = defineProps<{
   metrics: DashboardMetrics;
@@ -10,6 +15,7 @@ const props = defineProps<{
   summary: string;
   suggestions: string[];
   forecastSeries: TrendPoint[];
+  ragCard?: RagCard | null;
 }>();
 
 defineEmits<{
@@ -56,6 +62,34 @@ const forecastPreview = computed(() =>
         <ul>
           <li v-for="suggestion in suggestions" :key="suggestion">{{ suggestion }}</li>
         </ul>
+      </div>
+
+      <div v-if="ragCard" class="rag-card">
+        <div class="rag-head">
+          <el-tag
+            :type="ragCard.level === 'danger' ? 'danger' : 'warning'"
+            effect="dark"
+            size="small"
+          >
+            {{ ragCard.title || "RAG 辅助诊断" }}
+          </el-tag>
+          <span v-if="ragCard.standard" class="standard">参考：{{ ragCard.standard }}</span>
+        </div>
+
+        <p v-if="ragCard.suggestionShort" class="rag-short">
+          💡 {{ ragCard.suggestionShort }}
+        </p>
+
+        <div v-if="ragCard.sopSteps && ragCard.sopSteps.length" class="sop-list">
+          <div class="sop-head">标准作业步骤 (SOP)</div>
+          <ol>
+            <li v-for="(step, idx) in ragCard.sopSteps" :key="idx">{{ step }}</li>
+          </ol>
+        </div>
+
+        <div v-if="ragCard.safetyRedline" class="redline">
+          ⚠️ 安全红线：{{ ragCard.safetyRedline }}
+        </div>
       </div>
     </div>
 
@@ -166,6 +200,71 @@ const forecastPreview = computed(() =>
 
 .summary-box li + li {
   margin-top: 6px;
+}
+
+.rag-card {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 16px;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 170, 0, 0.08) 0%,
+    rgba(0, 212, 255, 0.06) 100%
+  );
+  border: 1px solid rgba(255, 170, 0, 0.25);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
+}
+
+.rag-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.rag-head .standard {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.rag-short {
+  margin: 0 0 10px;
+  color: var(--text-primary);
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+.sop-list {
+  margin-top: 8px;
+}
+
+.sop-head {
+  margin-bottom: 6px;
+  color: var(--accent-cyan);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sop-list ol {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--text-primary);
+}
+
+.sop-list li + li {
+  margin-top: 6px;
+}
+
+.redline {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 68, 68, 0.12);
+  border: 1px solid rgba(255, 68, 68, 0.35);
+  color: #ff9a9a;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .actions {
