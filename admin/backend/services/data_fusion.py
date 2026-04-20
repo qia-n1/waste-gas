@@ -27,6 +27,17 @@ FIELD_ALIASES: Dict[str, List[str]] = {
     "rto_out_temp": ["rto_temp", "rto_out_temperature"],
 }
 
+SOURCE_FILE_MAP: Dict[str, str] = {
+    "json": "json.csv",
+    "jsonl": "json.csv",
+    "txt": "json.csv",
+    "csv": "csv.csv",
+    "xlsx": "xlsx.csv",
+    "xlsm": "xlsx.csv",
+    "xltx": "xlsx.csv",
+    "xltm": "xlsx.csv",
+}
+
 
 @dataclass
 class FusionRuntimeState:
@@ -266,6 +277,14 @@ def _device_csv(device_id: str) -> Path:
     return settings.ingest_data_dir / f"{safe}.csv"
 
 
+def _source_csv(source_format: str) -> Path:
+    _ensure_dirs()
+    filename = SOURCE_FILE_MAP.get(source_format.lower())
+    if not filename:
+        raise ValueError(f"Unsupported source format: {source_format}")
+    return settings.ingest_data_dir / filename
+
+
 def _history_snapshot_csv(now: Optional[datetime] = None) -> Path:
     _ensure_dirs()
     stamp = (now or _now()).strftime("%Y%m%d_%H%M%S_%f")
@@ -311,9 +330,7 @@ def _extract_records(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     return [payload]
 
 
-def append_device_records(device_id: str, records: Sequence[Dict[str, Any]]) -> int:
-    path = _device_csv(device_id)
-    normalized_rows = [_normalize_record(rec) for rec in records]
+def _append_normalized_records(path: Path, normalized_rows: Sequence[Dict[str, Any]]) -> int:
     if not normalized_rows:
         return 0
 
@@ -362,7 +379,19 @@ def append_device_records(device_id: str, records: Sequence[Dict[str, Any]]) -> 
                 value = row.get(field, "")
                 out[field] = "" if value in (None, "") else value
             writer.writerow(out)
-    return len(records)
+    return len(normalized_rows)
+
+
+def append_device_records(device_id: str, records: Sequence[Dict[str, Any]]) -> int:
+    path = _device_csv(device_id)
+    normalized_rows = [_normalize_record(rec) for rec in records]
+    return _append_normalized_records(path, normalized_rows)
+
+
+def append_source_records(source_format: str, records: Sequence[Dict[str, Any]]) -> tuple[int, Path]:
+    path = _source_csv(source_format)
+    normalized_rows = [_normalize_record(rec) for rec in records]
+    return _append_normalized_records(path, normalized_rows), path
 
 
 def replace_device_records(device_id: str, records: Sequence[Dict[str, Any]]) -> int:
@@ -469,10 +498,9 @@ def _window_average(now: datetime) -> Optional[Dict[str, Any]]:
     start = now - timedelta(minutes=AGGREGATION_GRAIN_MINUTES)
     values: Dict[str, List[float]] = {k: [] for k in SENSOR_FIELDS}
 
-    for path in settings.ingest_data_dir.glob("*.csv"):
-        if path.name == _aggregate_csv_path().name:
-            continue
-        if path.name == "device_history.csv" or path.name.startswith("device_history_"):
+    for source_name in ("json.csv", "csv.csv", "xlsx.csv"):
+        path = settings.ingest_data_dir / source_name
+        if not path.exists():
             continue
         for row in _load_csv_rows(path):
             ts = _parse_timestamp(row.get("timestamp"))

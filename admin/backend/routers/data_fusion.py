@@ -5,7 +5,7 @@ from typing import Any, Dict
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from services.data_fusion import (
-    append_device_records,
+    append_source_records,
     get_status,
     parse_upload_file,
     rebuild_aggregate_from_history_csv,
@@ -14,11 +14,11 @@ from services.data_fusion import (
 )
 
 
-router = APIRouter(prefix="/api/data-fusion", tags=["data-fusion"])
+router = APIRouter(tags=["data-fusion"])
 
 
-@router.post("/ingest/{device_id}")
-async def ingest_json(device_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+@router.post("/sensor-data")
+async def ingest_json(payload: Dict[str, Any]) -> Dict[str, Any]:
     records = []
     if "records" in payload and isinstance(payload["records"], list):
         records = [item for item in payload["records"] if isinstance(item, dict)]
@@ -32,28 +32,45 @@ async def ingest_json(device_id: str, payload: Dict[str, Any]) -> Dict[str, Any]
     if not records:
         raise HTTPException(status_code=400, detail="No valid records in payload")
 
-    count = append_device_records(device_id=device_id, records=records)
-    return {"status": "ok", "device_id": device_id, "written": count}
+    count, source_file = append_source_records(source_format="json", records=records)
+    return {
+        "status": "ok",
+        "source_format": "json",
+        "source_file": source_file.name,
+        "written": count,
+    }
 
 
-@router.post("/upload/{device_id}")
-async def ingest_file(device_id: str, file: UploadFile = File(...)) -> Dict[str, Any]:
+@router.post("/sensor-data2")
+async def ingest_file(file: UploadFile = File(...)) -> Dict[str, Any]:
     content = await file.read()
     if not content:
         raise HTTPException(status_code=400, detail="Empty file")
 
+    filename = file.filename or ""
+    suffix = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
+    if suffix in {"json", "jsonl", "txt"}:
+        source_format = "json"
+    elif suffix == "csv":
+        source_format = "csv"
+    elif suffix in {"xlsx", "xlsm", "xltx", "xltm"}:
+        source_format = "xlsx"
+    else:
+        raise HTTPException(status_code=400, detail=f"Unsupported file type: .{suffix}" if suffix else "Unsupported file type")
+
     try:
-        records = parse_upload_file(content=content, filename=file.filename or "")
+        records = parse_upload_file(content=content, filename=filename)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     if not records:
         raise HTTPException(status_code=400, detail="No records parsed from file")
 
-    count = append_device_records(device_id=device_id, records=records)
+    count, source_file = append_source_records(source_format=source_format, records=records)
     response: Dict[str, Any] = {
         "status": "ok",
-        "device_id": device_id,
+        "source_format": source_format,
+        "source_file": source_file.name,
         "filename": file.filename,
         "written": count,
     }
@@ -61,7 +78,7 @@ async def ingest_file(device_id: str, file: UploadFile = File(...)) -> Dict[str,
     return response
 
 
-@router.post("/upload-history-csv")
+@router.post("/api/data-fusion/upload-history-csv")
 async def ingest_device_history_csv(file: UploadFile = File(...)) -> Dict[str, Any]:
     if not (file.filename or "").lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only .csv is supported for this endpoint")
@@ -91,11 +108,11 @@ async def ingest_device_history_csv(file: UploadFile = File(...)) -> Dict[str, A
     }
 
 
-@router.post("/aggregate/run-once")
+@router.post("/api/data-fusion/aggregate/run-once")
 async def run_once() -> Dict[str, Any]:
     return await run_aggregate_and_push_once()
 
 
-@router.get("/status")
+@router.get("/api/data-fusion/status")
 async def status() -> Dict[str, Any]:
     return get_status()

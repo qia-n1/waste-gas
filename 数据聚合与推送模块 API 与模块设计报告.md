@@ -17,20 +17,20 @@
    2. 设备批量文件上传（csv/json/jsonl/txt/xlsx）。
    3. 历史数据 csv 上传。
 2. 输出边界（不含模型推理算法）：
-   1. 设备数据标准化后持久化到 `admin/backend/data_fusion/*.csv`。
+  1. 设备数据标准化后持久化到 `admin/backend/data_fusion/json.csv`、`csv.csv`、`xlsx.csv`。
    2. 聚合输出到 `N.csv`（默认 `15.csv`）。
    3. 构造推送 payload 并调用模型服务 `/predict`（不描述模型内部处理）。
 
 ### 2.2 API 范围
 
-1. `POST /api/data-fusion/ingest/{device_id}`
-2. `POST /api/data-fusion/upload/{device_id}`
+1. `POST /sensor-data`
+2. `POST /sensor-data2`
 3. `POST /api/data-fusion/upload-history-csv`
 
 ## 3. 工程处理流程（总览）
 
 系统包含三条核心处理链路：
-1. 实时接收链路（接口 1/2）：写入设备 CSV，等待调度器做窗口聚合。
+1. 实时接收链路（接口 1/2）：写入固定来源 CSV，等待调度器做窗口聚合。
 2. 历史接收链路（接口 3）：生成历史快照文件并立即触发历史聚合。
 3. 定时调度链路（后台）：周期执行实时窗口聚合、模型推送、可选前端回调。
 
@@ -43,8 +43,8 @@
 
 ### 4.1 触发入口
 
-1. 接口 1：`POST /api/data-fusion/ingest/{device_id}`（JSON）。
-2. 接口 2：`POST /api/data-fusion/upload/{device_id}`（文件）。
+1. 接口 1：`POST /sensor-data`（JSON）。
+2. 接口 2：`POST /sensor-data2`（文件）。
 
 ### 4.2 处理步骤
 
@@ -56,13 +56,14 @@
   2. 字段按标准字段集合映射，支持别名。
   3. 非法数值容错，稀疏字段允许为空。
 3. 持久化写入。
-  1. 目标文件为 `{device_id}.csv`。
-  2. 按追加语义写入。
-4. 返回写入结果（`status/device_id/written`）。
+  1. 接口 1 目标文件固定为 `json.csv`。
+  2. 接口 2 目标文件按来源格式落到 `csv.csv`、`xlsx.csv` 或 `json.csv`。
+  3. 按追加语义写入。
+4. 返回写入结果（`status/source_format/source_file/written`）。
 
 ### 4.3 输出产物
 
-1. 设备原始标准化数据：`admin/backend/data_fusion/{device_id}.csv`。
+1. 设备原始标准化数据：`admin/backend/data_fusion/json.csv`、`csv.csv`、`xlsx.csv`。
 2. 调度器后续会基于该文件参与实时聚合。
 
 ## 5. 流程二：历史接收处理
@@ -124,30 +125,32 @@
 
 ### 7.1 实时 JSON 上报
 
-- 路径：`POST /api/data-fusion/ingest/{device_id}`。
-- 功能：接收 JSON，标准化后追加写入设备文件。
+- 路径：`POST /sensor-data`。
+- 功能：接收 JSON，标准化后追加写入 `json.csv`。
 
 成功响应示例：
 
 ```json
 {
   "status": "ok",
-  "device_id": "device_A",
+  "source_format": "json",
+  "source_file": "json.csv",
   "written": 1
 }
 ```
 
 ### 7.2 实时/批量文件上传
 
-- 路径：`POST /api/data-fusion/upload/{device_id}`。
-- 功能：接收文件，解析后标准化并追加写入设备文件。
+- 路径：`POST /sensor-data2`。
+- 功能：接收文件，解析后标准化并追加写入对应来源文件。
 
 成功响应示例：
 
 ```json
 {
   "status": "ok",
-  "device_id": "device_A",
+  "source_format": "csv",
+  "source_file": "csv.csv",
   "filename": "upload_payload.csv",
   "written": 10
 }
