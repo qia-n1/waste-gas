@@ -8,6 +8,8 @@ from services.data_fusion import (
     append_device_records,
     get_status,
     parse_upload_file,
+    rebuild_aggregate_from_history_csv,
+    save_history_snapshot,
     run_aggregate_and_push_once,
 )
 
@@ -49,11 +51,43 @@ async def ingest_file(device_id: str, file: UploadFile = File(...)) -> Dict[str,
         raise HTTPException(status_code=400, detail="No records parsed from file")
 
     count = append_device_records(device_id=device_id, records=records)
-    return {
+    response: Dict[str, Any] = {
         "status": "ok",
         "device_id": device_id,
         "filename": file.filename,
         "written": count,
+    }
+
+    return response
+
+
+@router.post("/upload-history-csv")
+async def ingest_device_history_csv(file: UploadFile = File(...)) -> Dict[str, Any]:
+    if not (file.filename or "").lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only .csv is supported for this endpoint")
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty file")
+
+    try:
+        records = parse_upload_file(content=content, filename=file.filename or "")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if not records:
+        raise HTTPException(status_code=400, detail="No records parsed from CSV")
+
+    written, history_path = save_history_snapshot(records=records)
+    aggregation = await rebuild_aggregate_from_history_csv(history_file=history_path.name)
+
+    return {
+        "status": "ok",
+        "device_id": "device_history",
+        "history_file": history_path.name,
+        "filename": file.filename,
+        "written": written,
+        "aggregation": aggregation,
     }
 
 

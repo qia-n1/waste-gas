@@ -17,8 +17,10 @@ class Settings:
     admin_username: str = os.getenv("ADMIN_USERNAME", "admin")
     admin_password: str = os.getenv("ADMIN_PASSWORD", "admin123456")
     vocs_base_url: str = os.getenv("VOCS_BASE_URL", "http://127.0.0.1:8001")
+    frontend_push_url: str = os.getenv("FRONTEND_PUSH_URL", "")
     ensemble_base_url: str = os.getenv("ENSEMBLE_BASE_URL", "http://127.0.0.1:8000")
     request_timeout: float = float(os.getenv("VOCS_REQUEST_TIMEOUT", "4"))
+    frontend_push_timeout: float = float(os.getenv("FRONTEND_PUSH_TIMEOUT", "3"))
     ensemble_timeout: float = float(os.getenv("ENSEMBLE_TIMEOUT", "10"))
     total_equipment: int = int(os.getenv("ADMIN_TOTAL_EQUIPMENT", "150"))
     csv_path: Path = Path(

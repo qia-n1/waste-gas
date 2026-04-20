@@ -32,9 +32,13 @@ FIELD_ALIASES: Dict[str, List[str]] = {
 class FusionRuntimeState:
     running: bool = False
     last_aggregation_timestamp: str = ""
+    last_history_upload_file: str = ""
     last_model_push_timestamp: str = ""
     last_model_push_ok: bool = False
     last_model_push_message: str = ""
+    last_frontend_push_timestamp: str = ""
+    last_frontend_push_ok: bool = False
+    last_frontend_push_message: str = ""
 
 
 _RUNTIME = FusionRuntimeState()
@@ -53,11 +57,14 @@ def _to_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
-def _parse_timestamp(value: Any) -> datetime:
+def _try_parse_timestamp(value: Any) -> Optional[datetime]:
     if isinstance(value, datetime):
         return value
 
     text = str(value or "").strip()
+    if not text:
+        return None
+
     if text.isdigit():
         raw = int(text)
         if raw > 1_000_000_000_000:
@@ -84,7 +91,168 @@ def _parse_timestamp(value: Any) -> datetime:
             return dt.replace(tzinfo=None)
         return dt
     except ValueError:
-        return _now()
+        return None
+
+
+def _parse_timestamp(value: Any) -> datetime:
+    parsed = _try_parse_timestamp(value)
+    if parsed is not None:
+        return parsed
+    return _now()
+
+
+def _resolve_history_input_path(history_file: Optional[str] = None) -> Optional[Path]:
+    _ensure_dirs()
+    if not history_file:
+        return None
+
+    p = Path(history_file)
+    if not p.is_absolute():
+        p = settings.ingest_data_dir / p
+    return p if p.exists() else None
+
+
+def _normalize_aggregate_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    out: Dict[str, Any] = {"timestamp": str(row.get("timestamp", ""))}
+    for field in SENSOR_FIELDS:
+        raw = row.get(field)
+        if raw in (None, ""):
+            out[field] = 0.0
+            continue
+        try:
+            out[field] = round(float(raw), 6)
+        except (TypeError, ValueError):
+            out[field] = 0.0
+    return out
+
+
+def _merge_aggregate_rows_incremental(new_rows: List[Dict[str, Any]]) -> Dict[str, int]:
+    agg_path = _aggregate_csv_path()
+    existing_rows = _load_csv_rows(agg_path)
+
+    merged_by_ts: Dict[str, Dict[str, Any]] = {}
+    for row in existing_rows:
+        ts = str(row.get("timestamp", ""))
+        if not ts:
+            continue
+        merged_by_ts[ts] = _normalize_aggregate_row(row)
+
+    inserted = 0
+    updated = 0
+    for row in new_rows:
+        ts = str(row.get("timestamp", ""))
+        if not ts:
+            continue
+        norm = _normalize_aggregate_row(row)
+        if ts in merged_by_ts:
+            updated += 1
+        else:
+            inserted += 1
+        merged_by_ts[ts] = norm
+
+    sorted_rows = sorted(
+        merged_by_ts.values(),
+        key=lambda r: _parse_timestamp(r.get("timestamp")),
+    )
+
+    with agg_path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["timestamp", *SENSOR_FIELDS])
+        writer.writeheader()
+        for row in sorted_rows:
+            writer.writerow(row)
+
+    return {
+        "inserted": inserted,
+        "updated": updated,
+        "total_after_merge": len(sorted_rows),
+    }
+
+
+def _rebuild_aggregate_from_history_csv(history_path: Path) -> Dict[str, Any]:
+    rows = _load_csv_rows(history_path)
+    if not rows:
+        return {"ok": False, "message": f"{history_path.name} has no data", "written": 0}
+
+    grain_seconds = max(1, AGGREGATION_GRAIN_MINUTES) * 60
+    parsed_rows: List[tuple[datetime, Dict[str, Any]]] = []
+    for row in rows:
+        ts = _try_parse_timestamp(row.get("timestamp"))
+        if ts is None:
+            continue
+        parsed_rows.append((ts, row))
+
+    if not parsed_rows:
+        return {"ok": False, "message": f"No valid timestamps in {history_path.name}", "written": 0}
+
+    max_ts = max(item[0] for item in parsed_rows)
+    buckets: Dict[int, Dict[str, List[float]]] = {}
+
+    for ts, row in parsed_rows:
+        delta_seconds = (max_ts - ts).total_seconds()
+        if delta_seconds < 0:
+            continue
+
+        bucket_index = int(delta_seconds // grain_seconds)
+        if bucket_index not in buckets:
+            buckets[bucket_index] = {field: [] for field in SENSOR_FIELDS}
+
+        for field in SENSOR_FIELDS:
+            raw = row.get(field)
+            if raw in (None, ""):
+                continue
+            try:
+                buckets[bucket_index][field].append(float(raw))
+            except (TypeError, ValueError):
+                continue
+
+    if not buckets:
+        return {"ok": False, "message": f"No numeric sensor values in {history_path.name}", "written": 0}
+
+    output_rows: List[Dict[str, Any]] = []
+    for bucket_index in sorted(buckets.keys()):
+        bucket_ts = (max_ts - timedelta(seconds=bucket_index * grain_seconds)).replace(second=0, microsecond=0)
+        out_row: Dict[str, Any] = {
+            "timestamp": bucket_ts.strftime("%Y-%m-%d %H:%M:00"),
+        }
+        for field in SENSOR_FIELDS:
+            values = buckets[bucket_index][field]
+            out_row[field] = round(sum(values) / len(values), 6) if values else 0.0
+        output_rows.append(out_row)
+
+    output_rows.sort(key=lambda row: row["timestamp"])
+    merge_stats = _merge_aggregate_rows_incremental(output_rows)
+
+    return {
+        "ok": True,
+        "message": f"Merged aggregate rows from {history_path.name}",
+        "history_file": history_path.name,
+        "written": len(output_rows),
+        "inserted": merge_stats["inserted"],
+        "updated": merge_stats["updated"],
+        "aggregate_total": merge_stats["total_after_merge"],
+        "source_rows": len(parsed_rows),
+        "max_timestamp": max_ts.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+
+
+async def rebuild_aggregate_from_history_csv(history_file: Optional[str] = None) -> Dict[str, Any]:
+    async with _LOCK:
+        if not history_file:
+            return {
+                "ok": False,
+                "message": "history_file is required to avoid duplicate aggregation",
+                "written": 0,
+            }
+
+        history_path = _resolve_history_input_path(history_file)
+        if history_path is None:
+            return {"ok": False, "message": "No history csv found", "written": 0}
+
+        result = _rebuild_aggregate_from_history_csv(history_path)
+        if result.get("ok") and result.get("written", 0) > 0:
+            _RUNTIME.last_aggregation_timestamp = str(result.get("max_timestamp", ""))
+            _RUNTIME.last_history_upload_file = str(result.get("history_file", ""))
+        return result
 
 
 def _ensure_dirs() -> None:
@@ -96,6 +264,12 @@ def _device_csv(device_id: str) -> Path:
     safe = "".join(ch for ch in device_id if ch.isalnum() or ch in ("-", "_"))
     safe = safe or "unknown"
     return settings.ingest_data_dir / f"{safe}.csv"
+
+
+def _history_snapshot_csv(now: Optional[datetime] = None) -> Path:
+    _ensure_dirs()
+    stamp = (now or _now()).strftime("%Y%m%d_%H%M%S_%f")
+    return settings.ingest_data_dir / f"device_history_{stamp}.csv"
 
 
 def _aggregate_csv_path() -> Path:
@@ -191,6 +365,49 @@ def append_device_records(device_id: str, records: Sequence[Dict[str, Any]]) -> 
     return len(records)
 
 
+def replace_device_records(device_id: str, records: Sequence[Dict[str, Any]]) -> int:
+    """Overwrite device csv with normalized records.
+
+    This is used by history backfill uploads where each file represents
+    a complete snapshot and should not be appended repeatedly.
+    """
+    path = _device_csv(device_id)
+    normalized_rows = [_normalize_record(rec) for rec in records]
+    if not normalized_rows:
+        return 0
+
+    fields = ["timestamp", *SENSOR_FIELDS]
+    with path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fields)
+        writer.writeheader()
+        for row in normalized_rows:
+            out = {"timestamp": row.get("timestamp", "")}
+            for field in SENSOR_FIELDS:
+                value = row.get(field, "")
+                out[field] = "" if value in (None, "") else value
+            writer.writerow(out)
+    return len(records)
+
+
+def save_history_snapshot(records: Sequence[Dict[str, Any]]) -> tuple[int, Path]:
+    snapshot_path = _history_snapshot_csv()
+    normalized_rows = [_normalize_record(rec) for rec in records]
+    if not normalized_rows:
+        return 0, snapshot_path
+
+    fields = ["timestamp", *SENSOR_FIELDS]
+    with snapshot_path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fields)
+        writer.writeheader()
+        for row in normalized_rows:
+            out = {"timestamp": row.get("timestamp", "")}
+            for field in SENSOR_FIELDS:
+                value = row.get(field, "")
+                out[field] = "" if value in (None, "") else value
+            writer.writerow(out)
+    return len(records), snapshot_path
+
+
 def parse_upload_file(content: bytes, filename: str) -> List[Dict[str, Any]]:
     suffix = Path(filename).suffix.lower()
 
@@ -254,6 +471,8 @@ def _window_average(now: datetime) -> Optional[Dict[str, Any]]:
 
     for path in settings.ingest_data_dir.glob("*.csv"):
         if path.name == _aggregate_csv_path().name:
+            continue
+        if path.name == "device_history.csv" or path.name.startswith("device_history_"):
             continue
         for row in _load_csv_rows(path):
             ts = _parse_timestamp(row.get("timestamp"))
@@ -348,6 +567,24 @@ async def _send_to_model(payload: Dict[str, Any]) -> Dict[str, Any]:
         }
 
 
+async def _push_to_frontend(payload: Dict[str, Any]) -> Dict[str, Any]:
+    url = settings.frontend_push_url.strip()
+    if not url:
+        return {
+            "ok": False,
+            "status_code": 0,
+            "message": "FRONTEND_PUSH_URL not configured",
+        }
+
+    async with httpx.AsyncClient(timeout=settings.frontend_push_timeout) as client:
+        response = await client.post(url, json=payload)
+        return {
+            "ok": response.status_code == 200,
+            "status_code": response.status_code,
+            "body": response.json() if response.content else {},
+        }
+
+
 async def run_aggregate_and_push_once() -> Dict[str, Any]:
     async with _LOCK:
         now = _now()
@@ -367,13 +604,33 @@ async def run_aggregate_and_push_once() -> Dict[str, Any]:
 
         try:
             result = await _send_to_model(payload)
+
             _RUNTIME.last_model_push_timestamp = _now().isoformat()
             _RUNTIME.last_model_push_ok = bool(result.get("ok"))
             _RUNTIME.last_model_push_message = f"status={result.get('status_code')}"
+
+            frontend_push_result: Dict[str, Any] | None = None
+            if result.get("ok"):
+                frontend_payload = {
+                    "event": "data-fusion-model-result",
+                    "aggregated_at": row["timestamp"],
+                    "model_result": result,
+                    "sent_at": _now().isoformat(),
+                }
+                frontend_push_result = await _push_to_frontend(frontend_payload)
+                _RUNTIME.last_frontend_push_timestamp = _now().isoformat()
+                _RUNTIME.last_frontend_push_ok = bool(frontend_push_result.get("ok"))
+                _RUNTIME.last_frontend_push_message = (
+                    f"status={frontend_push_result.get('status_code')}"
+                    if settings.frontend_push_url.strip()
+                    else "FRONTEND_PUSH_URL not configured"
+                )
+
             return {
                 "ok": bool(result.get("ok")),
                 "aggregated_at": row["timestamp"],
                 "model_result": result,
+                "frontend_push": frontend_push_result,
             }
         except Exception as exc:  # noqa: BLE001
             _RUNTIME.last_model_push_timestamp = _now().isoformat()
@@ -422,7 +679,11 @@ def get_status() -> Dict[str, Any]:
         "aggregate_csv": str(_aggregate_csv_path()),
         "csv_files": files,
         "last_aggregation_timestamp": _RUNTIME.last_aggregation_timestamp,
+        "last_history_upload_file": _RUNTIME.last_history_upload_file,
         "last_model_push_timestamp": _RUNTIME.last_model_push_timestamp,
         "last_model_push_ok": _RUNTIME.last_model_push_ok,
         "last_model_push_message": _RUNTIME.last_model_push_message,
+        "last_frontend_push_timestamp": _RUNTIME.last_frontend_push_timestamp,
+        "last_frontend_push_ok": _RUNTIME.last_frontend_push_ok,
+        "last_frontend_push_message": _RUNTIME.last_frontend_push_message,
     }
