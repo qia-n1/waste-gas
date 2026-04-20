@@ -28,5 +28,15 @@ class Settings:
         )
     )
 
+    # PostgreSQL (云数据库) — 默认指向开发库；生产请用环境变量覆盖
+    pg_host: str = os.getenv("PG_HOST", "98.142.241.155")
+    pg_port: int = int(os.getenv("PG_PORT", "5432"))
+    pg_db: str = os.getenv("PG_DB", "aqimonitor")
+    pg_user: str = os.getenv("PG_USER", "team")
+    pg_password: str = os.getenv("PG_PASSWORD", "fwwb1234")
+    pg_pool_min: int = int(os.getenv("PG_POOL_MIN", "1"))
+    pg_pool_max: int = int(os.getenv("PG_POOL_MAX", "8"))
+    pg_connect_timeout: int = int(os.getenv("PG_CONNECT_TIMEOUT", "10"))
+
 
 settings = Settings()

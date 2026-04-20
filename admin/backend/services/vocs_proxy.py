@@ -688,18 +688,69 @@ def _invoke_rag_diagnosis(
     try:
         return _rag_get_warning_diagnose(vocs, shap_reason, shap_score)
     except Exception as exc:  # pragma: no cover - 网络/模型异常兜底
-        print(f"⚠️  RAG 诊断调用失败：{exc}")
+        print(f"[RAG] diagnosis call failed: {exc}")
         return None
 
 
+def _plan_row_to_card(plan: Dict[str, Any]) -> Dict[str, Any]:
+    """把 wg_alert_rag_plans 行映射成前端 ragCard。"""
+    generated_at = plan.get("generated_at")
+    return {
+        "title": plan.get("title", ""),
+        "suggestionShort": plan.get("suggestion_short", ""),
+        "sopSteps": plan.get("sop_steps") or [],
+        "safetyRedline": plan.get("safety_redline") or "",
+        "standard": plan.get("standard") or "",
+        "level": plan.get("level", "warning"),
+        "reason": plan.get("reason") or "",
+        "version": plan.get("version"),
+        "generatedAt": generated_at.isoformat() if generated_at else None,
+        "fromCache": True,
+    }
+
+
+def _raw_to_card(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """rag_service 直接返回值（未落库时的临时回包）映射成 ragCard。"""
+    return {
+        "title": raw.get("title", ""),
+        "suggestionShort": raw.get("suggestion_short", ""),
+        "sopSteps": raw.get("sop_steps", []),
+        "safetyRedline": raw.get("safety_redline", ""),
+        "standard": raw.get("standard", ""),
+        "level": raw.get("level", "warning"),
+        "reason": raw.get("reason", ""),
+        "version": None,
+        "generatedAt": None,
+        "fromCache": False,
+    }
+
+
 async def get_alert_diagnosis(alert_id: str) -> dict[str, Any]:
+    """诊断接口：缓存优先（DB），未命中时实时跑 RAG 并落库。
+
+    流程：
+      1. 取大屏 overview（contributors / attribution）
+      2. 把 alert_id 转成 wg_alerts.id；非数字（本地 fallback / watchdog 告警）跳过 DB
+      3. 优先 SELECT wg_alert_rag_plans WHERE alert_id=? AND is_current
+      4. 命中 → 直接返回缓存（毫秒级）
+      5. 未命中且有 attribution → 调 RAG，写入 DB，再返回
+      6. 任一环节异常 → ragCard=None，其它字段不受影响
+    """
+    # 惰性 import 避免 vocs_proxy 启动期就强依赖 db 模块
+    from services.rag_plans import get_current_plan, parse_alert_id, upsert_plan
+
     overview = await get_dashboard_overview()
     attribution = overview.get("attribution")
 
-    # Use real ensemble attribution when available
+    # ------------------ contributors 构建（保持原逻辑） ------------------
     if attribution and attribution.get("feature_contributions"):
         contributors = [
-            {"label": item["feature"], "group": item["group"], "weight": item["ratio"], "contribution": item["contribution"]}
+            {
+                "label": item["feature"],
+                "group": item["group"],
+                "weight": item["ratio"],
+                "contribution": item["contribution"],
+            }
             for item in attribution["feature_contributions"][:6]
         ]
         group_contributions = attribution.get("group_contributions", [])
@@ -714,24 +765,66 @@ async def get_alert_diagnosis(alert_id: str) -> dict[str, Any]:
         ]
         group_contributions = []
 
-    # ------------------------------------------------------------------
-    # RAG 增强：基于 top1 feature 生成 SOP / 安全红线
-    # ------------------------------------------------------------------
+    # ------------------ ragCard：缓存优先 ------------------
     rag_card: Optional[Dict[str, Any]] = None
-    if RAG_AVAILABLE and attribution and attribution.get("feature_contributions"):
+    aid_int = parse_alert_id(alert_id)
+
+    # 1) 先查 DB 缓存
+    if aid_int is not None:
+        try:
+            cached = await asyncio.to_thread(get_current_plan, aid_int)
+            if cached:
+                rag_card = _plan_row_to_card(cached)
+        except Exception as exc:  # pragma: no cover - DB 故障走兜底
+            print(f"[RAG] cache lookup failed for alert {aid_int}: {exc}")
+
+    # 2) 未命中 → 实时跑 RAG（前提是 RAG 可用且有 attribution）
+    if (
+        rag_card is None
+        and RAG_AVAILABLE
+        and attribution
+        and attribution.get("feature_contributions")
+    ):
         top = attribution["feature_contributions"][0]
         feature = str(top.get("feature", ""))
         meta = SENSOR_LABEL_META.get(feature, {"label": feature})
         shap_reason = f"{meta['label']}异常"
-        shap_score = f"{_as_float(top.get('ratio')) * 100:.0f}%"
-        current_vocs = overview["metrics"].get("currentVocs", 0)
-        vocs_value = f"{_as_float(current_vocs):.1f}"
+        shap_ratio = _as_float(top.get("ratio"))
+        shap_score_pct = f"{shap_ratio * 100:.0f}%"
+        current_vocs = _as_float(overview["metrics"].get("currentVocs", 0))
+        vocs_value = f"{current_vocs:.1f}"
 
-        rag_card = await asyncio.to_thread(
-            _invoke_rag_diagnosis, vocs_value, shap_reason, shap_score
+        raw = await asyncio.to_thread(
+            _invoke_rag_diagnosis, vocs_value, shap_reason, shap_score_pct
         )
 
-    response: Dict[str, Any] = {
+        if raw:
+            # 3) 落库（仅 wg_alerts 真实 id 才落库）
+            if aid_int is not None:
+                try:
+                    saved = await asyncio.to_thread(
+                        upsert_plan,
+                        aid_int,
+                        raw,
+                        {
+                            "top_feature": feature,
+                            "top_feature_label": meta.get("label", feature),
+                            "shap_score": shap_ratio,
+                            "current_vocs": current_vocs,
+                            "model_name": "deepseek-chat",
+                            "confidence": 0.85,
+                        },
+                    )
+                    rag_card = _plan_row_to_card(saved)
+                    rag_card["fromCache"] = False  # 本次新生成，标记一下
+                except Exception as exc:  # pragma: no cover
+                    print(f"[RAG] persist plan failed for alert {aid_int}: {exc}")
+                    rag_card = _raw_to_card(raw)
+            else:
+                # 本地 fallback / watchdog 告警，不属于 wg_alerts，仅返回不落库
+                rag_card = _raw_to_card(raw)
+
+    return {
         "alertId": alert_id,
         "summary": overview["decision"]["summary"],
         "recommendations": overview["decision"]["suggestions"],
@@ -740,19 +833,5 @@ async def get_alert_diagnosis(alert_id: str) -> dict[str, Any]:
         "baseline": attribution.get("baseline") if attribution else None,
         "target": attribution.get("target") if attribution else None,
         "totalIncrement": attribution.get("total_increment") if attribution else None,
+        "ragCard": rag_card,
     }
-
-    if rag_card:
-        response["ragCard"] = {
-            "title": rag_card.get("title", ""),
-            "suggestionShort": rag_card.get("suggestion_short", ""),
-            "sopSteps": rag_card.get("sop_steps", []),
-            "safetyRedline": rag_card.get("safety_redline", ""),
-            "standard": rag_card.get("standard", ""),
-            "level": rag_card.get("level", ""),
-            "reason": rag_card.get("reason", ""),
-        }
-    else:
-        response["ragCard"] = None
-
-    return response

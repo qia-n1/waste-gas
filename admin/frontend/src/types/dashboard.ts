@@ -162,6 +162,9 @@ export interface RagCard {
   standard: string;
   level: string;
   reason?: string;
+  version?: number | null;
+  generatedAt?: string | null;
+  fromCache?: boolean;
 }
 
 export interface DiagnosisResponse {
