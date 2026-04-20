@@ -2,7 +2,7 @@
 
 ## 1. 文档目的
 
-本文档描述 admin 后端中数据聚合与推送模块的 API 设计与模块设计。
+本文档按工程处理流程描述 admin 后端中数据聚合与推送模块的实现逻辑，重点回答“数据如何进入、如何处理、如何输出”。
 
 范围约束如下：
 1. 前端边界为设备输入（包含设备实时 JSON 输入与文件上传输入）。
@@ -27,28 +27,107 @@
 2. `POST /api/data-fusion/upload/{device_id}`
 3. `POST /api/data-fusion/upload-history-csv`
 
-## 3. API 设计
+## 3. 工程处理流程（总览）
 
-### 3.1 接口 1：实时 JSON 上报
+系统包含三条核心处理链路：
+1. 实时接收链路（接口 1/2）：写入设备 CSV，等待调度器做窗口聚合。
+2. 历史接收链路（接口 3）：生成历史快照文件并立即触发历史聚合。
+3. 定时调度链路（后台）：周期执行实时窗口聚合、模型推送、可选前端回调。
 
-- 路径：`POST /api/data-fusion/ingest/{device_id}`
-- 功能：接收实时 JSON 数据并写入设备 CSV。
-- 处理逻辑：
-  1. 兼容以下 payload 结构：`records[]`、`data{}`、`record{}`、直接对象。
-  2. 调用预处理与标准化逻辑。
-  3. 写入 `{device_id}.csv`。
+统一处理原则：
+1. 先标准化、再持久化、后聚合。
+2. 历史链路与实时链路隔离，避免互相污染统计窗口。
+3. 历史聚合必须显式指定本次历史文件，避免重复计算。
 
-#### 请求示例
+## 4. 流程一：实时接收处理
 
-```json
-{
-  "timestamp": "2026-04-20T12:00:00Z",
-  "ambient_temp": 21.5,
-  "rto_out_conc": 46.2
-}
-```
+### 4.1 触发入口
 
-#### 成功响应示例
+1. 接口 1：`POST /api/data-fusion/ingest/{device_id}`（JSON）。
+2. 接口 2：`POST /api/data-fusion/upload/{device_id}`（文件）。
+
+### 4.2 处理步骤
+
+1. 输入解析。
+  1. 接口 1：兼容 `records[]`、`data{}`、`record{}`、直接对象。
+  2. 接口 2：按扩展名解析 csv/json/jsonl/txt/xlsx。
+2. 数据标准化。
+  1. 时间戳统一为 `%Y-%m-%d %H:%M:00`。
+  2. 字段按标准字段集合映射，支持别名。
+  3. 非法数值容错，稀疏字段允许为空。
+3. 持久化写入。
+  1. 目标文件为 `{device_id}.csv`。
+  2. 按追加语义写入。
+4. 返回写入结果（`status/device_id/written`）。
+
+### 4.3 输出产物
+
+1. 设备原始标准化数据：`admin/backend/data_fusion/{device_id}.csv`。
+2. 调度器后续会基于该文件参与实时聚合。
+
+## 5. 流程二：历史接收处理
+
+### 5.1 触发入口
+
+1. 接口：`POST /api/data-fusion/upload-history-csv`。
+2. 输入限制：仅支持 `.csv`。
+
+### 5.2 处理步骤
+
+1. 解析上传 CSV。
+2. 生成本次历史快照文件：`device_history_{timestamp}.csv`。
+3. 显式调用历史聚合函数，并传入本次 `history_file`。
+4. 以快照文件最大时间戳为锚点，按 15 分钟分桶。
+5. 各桶按维度计算均值。
+6. 与现有 `15.csv` 执行增量合并：
+  1. 同时间戳：更新。
+  2. 新时间戳：插入。
+  3. 全量按时间排序写回。
+
+### 5.3 关键约束
+
+1. 历史聚合函数未传 `history_file` 时直接报错。
+2. 禁止自动选择最新历史文件，避免重复聚合。
+
+### 5.4 输出产物
+
+1. 历史快照文件：`device_history_{timestamp}.csv`。
+2. 增量更新后的聚合文件：`15.csv`。
+3. 聚合统计摘要：`written/inserted/updated/aggregate_total`。
+
+## 6. 流程三：定时调度处理（后台）
+
+### 6.1 触发机制
+
+1. 应用启动后启动调度器循环。
+2. 每 `AGGREGATION_GRANULARITY_MINUTES` 分钟执行一次。
+
+### 6.2 处理步骤
+
+1. 窗口聚合：计算 `(now-grain, now]` 区间均值。
+2. 过滤源文件：
+  1. 排除聚合文件 `N.csv`。
+  2. 排除历史快照文件 `device_history_*.csv`（以及 legacy 历史文件）。
+3. 将窗口聚合结果追加写入 `N.csv`。
+4. 从聚合文件构造模型输入 payload（固定 96 步，不足补零）。
+5. 调用模型服务 `/predict`。
+6. 若配置 `FRONTEND_PUSH_URL`，将结果回调给前端中转服务。
+7. 更新运行状态字段（最近聚合、推送成功标记、消息等）。
+
+### 6.3 输出产物
+
+1. 实时聚合文件：`N.csv`（默认 `15.csv`，测试时可改 1 分钟）。
+2. 模型请求结果状态。
+3. 可选前端回调结果状态。
+
+## 7. API 设计
+
+### 7.1 实时 JSON 上报
+
+- 路径：`POST /api/data-fusion/ingest/{device_id}`。
+- 功能：接收 JSON，标准化后追加写入设备文件。
+
+成功响应示例：
 
 ```json
 {
@@ -58,22 +137,12 @@
 }
 ```
 
-#### 失败响应
+### 7.2 实时/批量文件上传
 
-- `400`：无有效记录。
+- 路径：`POST /api/data-fusion/upload/{device_id}`。
+- 功能：接收文件，解析后标准化并追加写入设备文件。
 
-### 3.2 接口 2：实时/批量文件上传
-
-- 路径：`POST /api/data-fusion/upload/{device_id}`
-- 功能：接收文件并解析后写入设备 CSV。
-- 支持格式：`.csv`, `.json`, `.jsonl`, `.txt`, `.xlsx/.xlsm/.xltx/.xltm`
-- 处理逻辑：
-  1. 读取文件内容。
-  2. 按扩展名解析为记录数组。
-  3. 调用预处理与标准化逻辑。
-  4. 写入 `{device_id}.csv`。
-
-#### 成功响应示例
+成功响应示例：
 
 ```json
 {
@@ -84,25 +153,12 @@
 }
 ```
 
-#### 失败响应
+### 7.3 历史上传与聚合重建
 
-- `400`：空文件。
-- `400`：不支持文件类型。
-- `400`：解析后无记录。
+- 路径：`POST /api/data-fusion/upload-history-csv`。
+- 功能：生成历史快照文件并基于该文件做历史聚合增量并入。
 
-### 3.3 接口 3：历史 CSV 上传与聚合重建
-
-- 路径：`POST /api/data-fusion/upload-history-csv`
-- 功能：上传历史数据 CSV，生成新的历史快照文件 `device_history_{timestamp}.csv`，并触发历史聚合重建。
-- 输入限制：仅支持 `.csv`。
-- 处理逻辑：
-  1. 解析 CSV 记录。
-  2. 每次上传生成新的 `device_history_{timestamp}.csv`。
-  3. 触发重建：动态锁定本次上传生成的历史文件，以最大时间戳向前按 15 分钟分桶聚合。
-  4. 将聚合结果按时间戳增量插入 `15.csv`，同时间戳更新，整体保持排序。
-  5. 聚合函数必须显式传入本次 `history_file`；未传入直接报错，不进行自动选择与回退，避免重复计算。
-
-#### 成功响应示例
+成功响应示例：
 
 ```json
 {
@@ -112,109 +168,67 @@
   "filename": "history.csv",
   "written": 1000,
   "aggregation": {
-    "ok": true,
-    "message": "Merged aggregate rows from device_history_20260420_120001_123456.csv",
-    "history_file": "device_history_20260420_120001_123456.csv",
-    "written": 68,
-    "inserted": 40,
-    "updated": 28,
-    "aggregate_total": 560,
-    "source_rows": 1000,
-    "max_timestamp": "2026-04-20 12:45:00"
+   "ok": true,
+   "message": "Merged aggregate rows from device_history_20260420_120001_123456.csv",
+   "history_file": "device_history_20260420_120001_123456.csv",
+   "written": 68,
+   "inserted": 40,
+   "updated": 28,
+   "aggregate_total": 560,
+   "source_rows": 1000,
+   "max_timestamp": "2026-04-20 12:45:00"
   }
 }
 ```
 
-#### 失败响应
+## 8. 模块职责映射
 
-- `400`：文件扩展名不是 csv。
-- `400`：空文件。
-- `400`：解析后无记录。
-
-## 4. 模块设计
-
-### 4.1 路由层
+### 8.1 路由层
 
 文件：`admin/backend/routers/data_fusion.py`
 
 职责：
-1. 接收请求并做输入基础校验。
-2. 调用服务层。
-3. 返回统一字典响应。
+1. 请求校验与错误映射。
+2. 调用服务层流程函数。
+3. 返回流程结果。
 
-### 4.2 服务层
+### 8.2 服务层
 
 文件：`admin/backend/services/data_fusion.py`
 
-职责分块：
-1. 解析模块：`parse_upload_file`（多格式文件解析）。
-2. 标准化模块：`_normalize_record`（时间戳、别名、数值转换）。
-3. 存储模块：`append_device_records` 与 `save_history_snapshot`（实时追加与历史快照写入）。
-4. 历史聚合模块：`_rebuild_aggregate_from_history_csv`。
-5. 实时聚合模块：`_window_average`。
-6. 推送准备模块：`_build_predict_payload`（96 步序列构造、补零、缺失回填）。
-7. 调度模块：`_scheduler_loop`（周期触发聚合与推送）。
+职责：
+1. 解析：`parse_upload_file`。
+2. 标准化：`_normalize_record`。
+3. 实时持久化：`append_device_records`。
+4. 历史快照写入：`save_history_snapshot`。
+5. 历史聚合：`_rebuild_aggregate_from_history_csv`。
+6. 聚合增量合并：`_merge_aggregate_rows_incremental`。
+7. 实时窗口聚合：`_window_average`。
+8. 推送前构造：`_build_predict_payload`。
+9. 调度：`_scheduler_loop`。
 
-### 4.3 配置模块
+## 9. 运行状态与可观测性
 
-文件：`admin/backend/config.py`
+状态项：
+1. `running`。
+2. `last_aggregation_timestamp`。
+3. `last_history_upload_file`。
+4. `last_model_push_timestamp`。
+5. `last_model_push_ok`。
+6. `last_model_push_message`。
+7. `last_frontend_push_timestamp`。
+8. `last_frontend_push_ok`。
+9. `last_frontend_push_message`。
 
-关键配置：
-1. `AGGREGATION_GRANULARITY_MINUTES`：聚合粒度（默认 15）。
-2. `INGEST_DATA_DIR`：CSV 持久化目录。
-3. `VOCS_BASE_URL`：模型服务地址（用于推送请求）。
-4. `FRONTEND_PUSH_URL`：前端回调地址（可选，未配置则不回调）。
-5. `FRONTEND_PUSH_TIMEOUT`：前端回调超时（秒）。
+## 10. 异常处理
 
-## 5. 数据预处理设计
+1. 输入异常：返回 `400`。
+2. 文件类型不支持：返回 `400`。
+3. 历史聚合未传 `history_file`：返回业务失败（`ok=false`）。
+4. 聚合窗口无数据：返回业务失败（`ok=false`）。
+5. 模型推送失败：记录状态，不中断服务。
 
-### 5.1 时间戳标准化
-
-1. 支持字符串格式：
-   1. `%Y-%m-%d %H:%M:%S`
-   2. `%Y-%m-%d %H:%M`
-   3. `%Y-%m-%dT%H:%M:%S`
-   4. `%Y-%m-%dT%H:%M:%S%z`
-   5. ISO 8601（含 `Z`）
-2. 支持 Unix 秒和毫秒时间戳。
-3. 输出格式：`%Y-%m-%d %H:%M:00`。
-
-### 5.2 字段映射与容错
-
-1. 按 `SENSOR_FIELDS` 作为目标标准字段集合。
-2. 使用 `FIELD_ALIASES` 兼容异构字段命名。
-3. 数值字段通过 `_to_float` 转换；非法值容错。
-4. 稀疏字段可为空，保证弱耦合接入。
-
-### 5.3 CSV 持久化策略
-
-1. 每个设备独立文件 `{device_id}.csv`。
-2. 写入前合并已有字段与新字段并集，避免字段丢失。
-3. 以追加语义写入，不覆盖设备历史数据。
-4. 历史上传接口（接口 3）采用快照写入语义：每次上传生成新的 `device_history_{timestamp}.csv`，避免覆盖历史批次数据。
-
-## 6. 聚合与推送设计
-
-### 6.1 历史数据聚合（接口 3 触发）
-
-1. 输入：本次上传生成的 `device_history_{timestamp}.csv`。
-2. 以 `max(timestamp)` 为锚点，向前按 15 分钟分桶。
-3. 每桶每维度取均值。
-4. 结果增量并入 `15.csv`：同时间戳更新，不同时间戳插入，并保持全局时间排序。
-
-### 6.2 实时数据聚合（调度触发）
-
-1. 每个周期计算 `(now-15min, now]` 窗口内所有设备数据均值。
-2. 产出一行聚合数据，追加写入 `15.csv`（或当前粒度文件）。
-
-### 6.3 推送前数据构造（模型边界）
-
-1. 从聚合文件读取最近 96 条数据。
-2. 不足 96 条时左侧补零。
-3. 缺失字段使用上次观测值回填。
-4. 输出结构：`{"data_sequence": [{"timestamp": ..., "feature_values": [...]}, ...]}`。
-
-### 6.4 时间桩与阶段耗时统计
+## 11. 时间损耗统计
 
 调度主链路（一次周期）记录以下阶段耗时，单位 ms：
 1. `aggregate_window_ms`：窗口聚合计算耗时。
@@ -231,56 +245,3 @@
 4. `model_push_ms=22.673`
 5. `frontend_push_ms=10.620`
 6. `total_ms=35.794`
-
-## 7. 运行时状态与可观测性
-
-状态项：
-1. `running`：调度器状态。
-2. `last_aggregation_timestamp`：最近聚合时间。
-3. `last_model_push_timestamp`：最近推送时间。
-4. `last_model_push_ok`：最近推送是否成功。
-5. `last_model_push_message`：最近推送摘要信息。
-6. `last_frontend_push_timestamp`：最近前端回调时间。
-7. `last_frontend_push_ok`：最近前端回调是否成功。
-8. `last_frontend_push_message`：最近前端回调摘要信息。
-9. `last_history_upload_file`：最近一次参与历史聚合的历史快照文件名。
-
-## 8. 异常处理策略
-
-1. 输入异常：返回 `400`。
-2. 不支持文件类型：返回 `400`。
-3. 聚合无有效数据：返回 `ok=false` 与提示信息。
-4. 模型推送失败：记录运行时状态，不影响服务存活。
-
-## 9. 验收口径
-
-### 9.1 实时上传验收
-
-1. 接口 1/2 返回 `status=ok`。
-2. `written` 与有效记录数一致。
-3. 对应设备 CSV 新增记录可查。
-
-### 9.2 历史上传验收
-
-1. 接口 3 返回 `aggregation.ok=true`。
-2. 返回中 `history_file` 为新生成的 `device_history_{timestamp}.csv`。
-3. `aggregation.written > 0`。
-4. `15.csv` 时间有序且为增量合并结果（可观测 `inserted/updated` 变化）。
-
-### 9.3 预处理验收
-
-1. 混合时间格式可统一落盘。
-2. 字段别名可正确映射。
-3. 缺失字段不阻塞写入。
-
-### 9.4 定时链路验收
-
-1. 调度器自动触发后，`last_model_push_ok=true`。
-2. 若配置回调地址，`last_frontend_push_ok=true`。
-3. 聚合产物文件与状态时间戳一致。
-
-## 10. 后续实现建议
-
-1. 引入统一响应 envelope（`code/message/request_id/data`）。
-2. 为历史上传增加幂等键（批次号或文件哈希）。
-3. 增加接口级自动化测试（包含格式异常与边界时间戳）。
