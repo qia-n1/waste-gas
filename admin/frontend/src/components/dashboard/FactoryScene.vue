@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import type { FactoryNode } from "@/types/dashboard";
 
@@ -14,6 +14,9 @@ const props = defineProps<{
 
 const sceneRef = ref<HTMLDivElement | null>(null);
 const hoveredNodeId = ref<string | null>(null);
+// 监测点位 / 关键设备 / 1号排口 三个文字标签已按需求移除，
+// 3D 场景仍保留状态高亮标记（颜色区分正常/预警/告警），
+// 下方图例仍需对应这三种状态色。
 const projectedBuildingLabels = ref<
   Array<{ id: string; name: string; left: string; top: string; visible: boolean }>
 >([]);
@@ -33,14 +36,6 @@ const pulseMeshes = new Map<string, THREE.Mesh>();
 const interactiveMeshes = new Map<string, THREE.Object3D>();
 const smokeMeshes: THREE.Mesh[] = [];
 const buildingAnchorPoints = new Map<string, THREE.Object3D>();
-
-const labelPositions = computed(() =>
-  props.nodes.map((node) => ({
-    ...node,
-    left: `${node.x}%`,
-    top: `${node.y}%`,
-  })),
-);
 
 const buildingLabels = [
   { id: "coating", name: "喷涂生产厂房", anchor: new THREE.Vector3(-3.6, 1.7, 2.55) },
@@ -770,16 +765,6 @@ onBeforeUnmount(() => {
           <span class="building-tag__subtitle">工艺单元</span>
         </span>
       </div>
-      <div
-        v-for="node in labelPositions"
-        :key="node.id"
-        class="node-tag"
-        :class="{ 'node-tag--active': hoveredNodeId === node.id }"
-        :style="{ left: node.left, top: node.top }"
-      >
-        <span class="node-pin" :style="{ background: statusColor(node.status) }"></span>
-        <span>{{ node.label }}</span>
-      </div>
     </div>
   </section>
 </template>
@@ -866,24 +851,6 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
-.node-tag {
-  position: absolute;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 11px;
-  border-radius: 12px;
-  background: rgba(7, 15, 31, 0.66);
-  border: 1px solid rgba(95, 122, 191, 0.2);
-  font-size: 12px;
-  color: var(--text-primary);
-  transition:
-    transform 180ms ease,
-    border-color 180ms ease,
-    box-shadow 180ms ease,
-    background 180ms ease;
-}
-
 .building-tag {
   position: absolute;
   display: inline-flex;
@@ -962,20 +929,6 @@ onBeforeUnmount(() => {
   font-size: 10px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-}
-
-.node-tag--active {
-  transform: translateY(-4px);
-  background: rgba(10, 24, 49, 0.9);
-  border-color: rgba(83, 209, 255, 0.55);
-  box-shadow: 0 10px 24px rgba(6, 15, 31, 0.35);
-}
-
-.node-pin {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  box-shadow: 0 0 12px currentColor;
 }
 
 .exceed-warning {
