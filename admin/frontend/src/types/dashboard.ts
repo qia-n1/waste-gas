@@ -73,6 +73,57 @@ export interface TopContributorSeries {
   series: TrendPoint[];
 }
 
+export interface EmitterIndicator {
+  field: string;
+  label: string;
+  value: number;
+  unit: string;
+  warning: number;
+  critical: number;
+  /** 0~1.15，按 _indicator_ratio 分段归一。1.0 = critical，>1 = 超标。 */
+  ratio: number;
+  level: "normal" | "warning" | "critical";
+}
+
+export interface EmitterConcentration {
+  label: string;
+  anchor: [number, number, number];
+  /** 2~3 个工艺指标，indicators[0] = 主指标（决定 emitter-history 弹窗曲线）。 */
+  indicators: EmitterIndicator[];
+  /** 所有指标中的最大 ratio，用于热力外壳的颜色强度。 */
+  maxRatio: number;
+  /** 整体告警等级（indicators 里最坏的那个）。 */
+  level: "normal" | "warning" | "critical";
+  // 以下字段是主指标的直通副本，保留给只读取顶层 value/field/unit/... 的调用点
+  field: string;
+  value: number;
+  unit: string;
+  warning: number;
+  critical: number;
+}
+
+export type EmitterConcentrations = Record<string, EmitterConcentration>;
+
+export interface WindField {
+  direction: [number, number, number];
+  speed: number;
+}
+
+export interface EmitterHistoryResponse {
+  id: string;
+  label: string;
+  field: string;
+  unit: string;
+  warning: number;
+  critical: number;
+  currentValue: number;
+  minValue: number;
+  maxValue: number;
+  avgValue: number;
+  level: "normal" | "warning" | "critical";
+  points: TrendPoint[];
+}
+
 export interface DashboardOverview {
   timestamp: string;
   metrics: DashboardMetrics;
@@ -84,6 +135,8 @@ export interface DashboardOverview {
   factoryNodes: FactoryNode[];
   attribution?: Attribution;
   topContributorSeries?: TopContributorSeries[];
+  emitterConcentrations?: EmitterConcentrations;
+  windField?: WindField;
 }
 
 export interface EquipmentStatusItem {

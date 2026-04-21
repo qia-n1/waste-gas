@@ -2,7 +2,7 @@
 import dayjs from "dayjs";
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { HomeFilled, Operation, UserFilled } from "@element-plus/icons-vue";
+import { HomeFilled, Operation, Tickets, UserFilled } from "@element-plus/icons-vue";
 
 import type { DashboardMetrics } from "@/types/dashboard";
 
@@ -29,6 +29,12 @@ const navigationItems = [
     label: "主页面",
     icon: HomeFilled,
     description: "返回 VOCs 综合看板主页",
+  },
+  {
+    name: "work-orders",
+    label: "代维工单",
+    icon: Tickets,
+    description: "代维工单全流程管理与月度统计分析",
   },
   {
     name: "users",
@@ -79,7 +85,7 @@ const formattedTime = computed(() => now.value.format("YYYY-MM-DD HH:mm"));
       </div>
 
       <div class="header-center">
-        <h1 class="platform-title">智洁园区 - 废气综合管理平台</h1>
+        <h1 class="platform-title">气盾卫士-多源化工废气智能治理系统</h1>
       </div>
 
       <div class="header-right">

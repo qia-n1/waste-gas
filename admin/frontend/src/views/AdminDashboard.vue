@@ -159,6 +159,7 @@ onBeforeUnmount(() => {
         :current-vocs="dashboardStore.overview.metrics.currentVocs"
         :system-phase="dashboardStore.overview.metrics.systemPhase"
         :is-exceed-warning="dashboardStore.isExceedWarning"
+        :emitter-concentrations="dashboardStore.emitterConcentrations"
       />
     </template>
 

@@ -1,15 +1,27 @@
 <script setup lang="ts">
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
-import type { FactoryNode } from "@/types/dashboard";
+import type {
+  EmitterConcentrations,
+  EmitterIndicator,
+  FactoryNode,
+} from "@/types/dashboard";
+import EmitterHistoryPopup from "./EmitterHistoryPopup.vue";
+import { EMITTER_DEFINITIONS } from "./scene/EmitterConfig";
+import { HeatShellSet } from "./scene/HeatShell";
 
 const props = defineProps<{
   nodes: FactoryNode[];
   currentVocs: number;
   systemPhase: string;
   isExceedWarning?: boolean;
+  emitterConcentrations?: EmitterConcentrations;
 }>();
 
 const sceneRef = ref<HTMLDivElement | null>(null);
@@ -26,6 +38,11 @@ let scene: THREE.Scene | null = null;
 let camera: THREE.PerspectiveCamera | null = null;
 let campusGroup: THREE.Group | null = null;
 let controls: OrbitControls | null = null;
+// 热力外壳集合：每个工艺单元一个发光 mesh，颜色由浓度 ratio 驱动
+let heatShells: HeatShellSet | null = null;
+// 后处理 pipeline：RenderPass → UnrealBloomPass → OutputPass
+let composer: EffectComposer | null = null;
+let bloomPass: UnrealBloomPass | null = null;
 let frameId = 0;
 const clock = new THREE.Clock();
 const raycaster = new THREE.Raycaster();
@@ -37,14 +54,70 @@ const interactiveMeshes = new Map<string, THREE.Object3D>();
 const smokeMeshes: THREE.Mesh[] = [];
 const buildingAnchorPoints = new Map<string, THREE.Object3D>();
 
+/** 构建标签要渲染的多指标行 —— 每个 label 最多展示 3 条 indicator。 */
+const indicatorsByEmitterId = computed<Record<string, EmitterIndicator[]>>(() => {
+  const out: Record<string, EmitterIndicator[]> = {};
+  const concs = props.emitterConcentrations;
+  if (!concs) return out;
+  for (const id of Object.keys(concs)) {
+    out[id] = concs[id].indicators?.slice(0, 3) ?? [];
+  }
+  return out;
+});
+
+/** 格式化 indicator 值：大数字去掉小数；百分比等小数保留 1 位。 */
+const formatIndicatorValue = (value: number): string => {
+  if (!Number.isFinite(value)) return "--";
+  const abs = Math.abs(value);
+  if (abs >= 1000) return value.toFixed(0);
+  if (abs >= 100) return value.toFixed(1);
+  return value.toFixed(2);
+};
+
+// id 与 EMITTER_DEFINITIONS / 后端 EMITTER_CONFIGS 对齐，保证点击标签时能直接用
+// 同一 id 向 /api/dashboard/emitter-history/{id} 拉取历史。
 const buildingLabels = [
   { id: "coating", name: "喷涂生产厂房", anchor: new THREE.Vector3(-3.6, 1.7, 2.55) },
   { id: "rotor", name: "转轮吸附厂房", anchor: new THREE.Vector3(-1.05, 1.85, 1.85) },
-  { id: "rto", name: "RTO 主处理厂房", anchor: new THREE.Vector3(1.95, 2.15, 1.95) },
+  { id: "rto_in", name: "RTO 主处理厂房", anchor: new THREE.Vector3(1.95, 2.15, 1.95) },
   { id: "utility", name: "公辅燃烧区", anchor: new THREE.Vector3(5.15, 1.45, 2.55) },
-  { id: "stack-zone", name: "排口烟囱区", anchor: new THREE.Vector3(-5.45, 4.95, -0.55) },
+  { id: "stack", name: "排口烟囱区", anchor: new THREE.Vector3(-5.45, 4.95, -0.55) },
   { id: "public", name: "监测附属区", anchor: new THREE.Vector3(5.4, 1.1, 4.0) },
 ];
+
+/** 当前弹窗指向的 emitter id，空字符串代表没有弹窗。 */
+const selectedEmitterId = ref<string>("");
+/** 弹窗参考 anchor 的屏幕像素坐标（相对 sceneRef 容器）。 */
+const popupAnchor = ref<{ left: number; top: number }>({ left: 0, top: 0 });
+/** 弹窗计算尺寸使用的 host 宽高，跟随场景 resize。 */
+const hostSize = ref<{ width: number; height: number }>({ width: 0, height: 0 });
+
+const syncHostSize = () => {
+  if (!sceneRef.value) return;
+  hostSize.value = {
+    width: sceneRef.value.clientWidth,
+    height: sceneRef.value.clientHeight,
+  };
+};
+
+const handleLabelClick = (event: MouseEvent, id: string) => {
+  event.stopPropagation();
+  if (!sceneRef.value) return;
+  // 没有对应 emitter 配置就不弹（防止未来新增 label 忘了同步）
+  if (!EMITTER_DEFINITIONS.some((def) => def.id === id)) return;
+
+  const rect = sceneRef.value.getBoundingClientRect();
+  popupAnchor.value = {
+    left: event.clientX - rect.left,
+    top: event.clientY - rect.top,
+  };
+  syncHostSize();
+  selectedEmitterId.value = id;
+};
+
+const closePopup = () => {
+  selectedEmitterId.value = "";
+};
 
 const statusColor = (status: string) => {
   if (status === "critical") {
@@ -516,6 +589,10 @@ const resizeScene = () => {
   renderer.setSize(clientWidth, clientHeight);
   camera.aspect = clientWidth / clientHeight;
   camera.updateProjectionMatrix();
+  if (composer) {
+    composer.setSize(clientWidth, clientHeight);
+  }
+  hostSize.value = { width: clientWidth, height: clientHeight };
 };
 
 const updatePointer = (event: PointerEvent) => {
@@ -582,12 +659,20 @@ const updateBuildingLabels = () => {
   projectedBuildingLabels.value = results;
 };
 
+/** 把 store 里的最新浓度推给热力外壳（smoothed tick 在 animate 里做）。 */
+const pushConcentrationsToShells = () => {
+  if (!heatShells) return;
+  const concs = props.emitterConcentrations;
+  if (concs) heatShells.updateFromConcentrations(concs);
+};
+
 const animate = () => {
   if (!renderer || !scene || !camera || !campusGroup) {
     return;
   }
 
-  const elapsed = clock.getElapsedTime();
+  const dt = clock.getDelta();
+  const elapsed = clock.elapsedTime;
   campusGroup.rotation.y = -0.46 + Math.sin(elapsed * 0.18) * 0.035;
   campusGroup.position.y = Math.sin(elapsed * 0.55) * 0.04;
   if (controls) {
@@ -625,7 +710,19 @@ const animate = () => {
   });
 
   updateBuildingLabels();
-  renderer.render(scene, camera);
+
+  // 热力外壳：每帧 smoothing 到目标 ratio + pulse 相位
+  if (heatShells) {
+    heatShells.tick(dt, elapsed);
+  }
+
+  // 后处理 pipeline（Render → Bloom → Output），composer 内部会自己调 renderer
+  if (composer) {
+    composer.render();
+  } else {
+    renderer.render(scene, camera);
+  }
+
   frameId = requestAnimationFrame(animate);
 };
 
@@ -699,7 +796,35 @@ onMounted(() => {
   buildMarkers();
   buildSmoke();
   updateMarkers();
+
+  // 热力外壳：每个工艺单元一个发光罩，颜色由浓度 ratio 驱动。
+  // 加到 campusGroup 下而不是 scene 下，这样 breathing 动画会带着外壳一起动。
+  if (campusGroup) {
+    heatShells = new HeatShellSet(campusGroup, EMITTER_DEFINITIONS);
+    pushConcentrationsToShells();
+  }
+
+  // 后处理：RenderPass → UnrealBloomPass（让外壳颜色有"溢出"泛光）→ OutputPass。
+  // 参数调优历史：之前 threshold=0.25 + strength=0.55 会把浅灰建筑和 ambient 光
+  // 一起拉进 bloom，整屏发白。现在 threshold=0.88 只吃热力外壳里最饱和的红/橙段，
+  // strength=0.28、radius=0.45 让泛光保持轻量、不糊。
+  {
+    const { clientWidth, clientHeight } = sceneRef.value;
+    composer = new EffectComposer(renderer);
+    composer.setSize(clientWidth, clientHeight);
+    composer.addPass(new RenderPass(scene, camera));
+    bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(clientWidth, clientHeight),
+      0.28, // strength
+      0.45, // radius
+      0.88, // threshold
+    );
+    composer.addPass(bloomPass);
+    composer.addPass(new OutputPass());
+  }
+
   resizeScene();
+  syncHostSize();
   animate();
 
   sceneRef.value.addEventListener("pointermove", updatePointer);
@@ -715,11 +840,30 @@ watch(
   { deep: true },
 );
 
+// SSE 更新浓度时把目标 ratio 推给 HeatShell。实际 uniform 刷新 + 平滑插值在
+// animate() 的 tick() 里完成，保证颜色过渡柔和，不会跳变。
+watch(
+  () => props.emitterConcentrations,
+  () => {
+    pushConcentrationsToShells();
+  },
+  { deep: true },
+);
+
 onBeforeUnmount(() => {
   cancelAnimationFrame(frameId);
   window.removeEventListener("resize", resizeScene);
   sceneRef.value?.removeEventListener("pointermove", updatePointer);
   sceneRef.value?.removeEventListener("pointerleave", clearHover);
+  if (heatShells) {
+    heatShells.dispose();
+    heatShells = null;
+  }
+  if (composer) {
+    composer.dispose();
+    composer = null;
+  }
+  bloomPass = null;
   disposeScene();
   controls?.dispose();
   controls = null;
@@ -742,12 +886,23 @@ onBeforeUnmount(() => {
       <span>系统阶段：{{ systemPhase }}</span>
       <strong>当前 VOCs {{ currentVocs.toFixed(1) }} mg/m³</strong>
     </div>
-    <div class="scene-wrap">
+    <div class="scene-wrap" @click="closePopup">
       <div ref="sceneRef" class="scene-host"></div>
       <div class="scene-legend">
         <span><i class="dot dot-normal"></i>正常</span>
         <span><i class="dot dot-warning"></i>预警</span>
         <span><i class="dot dot-critical"></i>告警</span>
+      </div>
+      <!-- 右上角图例：仅保留"浓度热力图"标题 + 色系条（0~100+），
+           原本罗列 6 个工艺单元数据的列表已下沉到建筑上方的 .building-tag，
+           这里只作为 3D 场景颜色→数值的解读键。 -->
+      <div class="heatmap-hud">
+        <div class="heatmap-hud__title">浓度热力图</div>
+        <div class="heatmap-hud__scale">
+          <span class="heatmap-hud__scale-label">0</span>
+          <div class="heatmap-hud__scale-bar"></div>
+          <span class="heatmap-hud__scale-label">100+</span>
+        </div>
       </div>
     </div>
     <div class="node-layer">
@@ -755,16 +910,48 @@ onBeforeUnmount(() => {
         v-for="label in projectedBuildingLabels"
         :key="label.id"
         class="building-tag"
-        :class="{ 'building-tag--hidden': !label.visible }"
+        :class="[
+          `building-tag--${emitterConcentrations?.[label.id]?.level ?? 'normal'}`,
+          {
+            'building-tag--hidden': !label.visible,
+            'building-tag--active': selectedEmitterId === label.id,
+          },
+        ]"
         :style="{ left: label.left, top: label.top }"
+        @click="handleLabelClick($event, label.id)"
       >
         <span class="building-tag__halo"></span>
         <span class="building-tag__line"></span>
         <span class="building-tag__text">
           <span class="building-tag__title">{{ label.name }}</span>
-          <span class="building-tag__subtitle">工艺单元</span>
+          <ul
+            v-if="indicatorsByEmitterId[label.id]?.length"
+            class="building-tag__indicators"
+          >
+            <li
+              v-for="ind in indicatorsByEmitterId[label.id]"
+              :key="ind.field"
+              :class="['building-tag__row', `building-tag__row--${ind.level}`]"
+            >
+              <span class="building-tag__label">{{ ind.label }}</span>
+              <span class="building-tag__value">
+                {{ formatIndicatorValue(ind.value) }}
+                <em>{{ ind.unit }}</em>
+              </span>
+            </li>
+          </ul>
+          <span v-else class="building-tag__subtitle">工艺单元 · 点击看历史</span>
         </span>
       </div>
+      <EmitterHistoryPopup
+        v-if="selectedEmitterId"
+        :emitter-id="selectedEmitterId"
+        :anchor-left="popupAnchor.left"
+        :anchor-top="popupAnchor.top"
+        :host-width="hostSize.width"
+        :host-height="hostSize.height"
+        @close="closePopup"
+      />
     </div>
   </section>
 </template>
@@ -845,6 +1032,56 @@ onBeforeUnmount(() => {
   color: var(--accent-red);
 }
 
+/* ---------- 粒子浓度热力图 HUD ---------- */
+.heatmap-hud {
+  position: absolute;
+  right: 16px;
+  top: 16px;
+  min-width: 168px;
+  padding: 10px 12px 11px;
+  border-radius: 10px;
+  background: rgba(7, 15, 31, 0.72);
+  border: 1px solid rgba(95, 122, 191, 0.24);
+  backdrop-filter: blur(6px);
+  color: var(--text-secondary);
+  font-size: 12px;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.heatmap-hud__title {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  opacity: 0.85;
+}
+
+.heatmap-hud__scale {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.heatmap-hud__scale-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    hsl(190, 72%, 55%) 0%,
+    hsl(100, 72%, 55%) 35%,
+    hsl(40, 82%, 58%) 65%,
+    hsl(10, 82%, 58%) 100%
+  );
+  box-shadow: 0 0 12px rgba(83, 209, 255, 0.25);
+}
+
+.heatmap-hud__scale-label {
+  font-size: 10px;
+  color: rgba(169, 196, 232, 0.7);
+}
+
 .node-layer {
   position: absolute;
   inset: 82px 18px 26px 18px;
@@ -857,9 +1094,37 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 10px;
   transform: translate(-18%, -110%);
+  /* 父级 .node-layer 设了 pointer-events: none 以便鼠标事件穿透到 Three 画布，
+     这里单独把标签打开，让点击仅命中标签本身。 */
+  pointer-events: auto;
+  cursor: pointer;
   transition:
     opacity 180ms ease,
-    transform 180ms ease;
+    transform 180ms ease,
+    filter 180ms ease;
+}
+
+.building-tag:hover .building-tag__text {
+  border-color: rgba(142, 230, 255, 0.62);
+  box-shadow:
+    inset 0 1px 0 rgba(180, 235, 255, 0.14),
+    0 14px 30px rgba(5, 14, 28, 0.45),
+    0 0 18px rgba(83, 209, 255, 0.28);
+  transform: translateY(-1px);
+}
+
+.building-tag:hover .building-tag__halo {
+  box-shadow:
+    0 0 0 4px rgba(83, 209, 255, 0.14),
+    0 0 24px rgba(83, 209, 255, 0.55);
+}
+
+.building-tag--active .building-tag__text {
+  border-color: rgba(142, 230, 255, 0.75);
+  box-shadow:
+    inset 0 1px 0 rgba(180, 235, 255, 0.18),
+    0 16px 32px rgba(5, 14, 28, 0.5),
+    0 0 24px rgba(83, 209, 255, 0.42);
 }
 
 .building-tag--hidden {
@@ -916,12 +1181,17 @@ onBeforeUnmount(() => {
   box-shadow:
     inset 0 1px 0 rgba(180, 235, 255, 0.08),
     0 12px 26px rgba(5, 14, 28, 0.34);
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
 }
 
 .building-tag__title {
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.02em;
+  color: #eaf6ff;
 }
 
 .building-tag__subtitle {
@@ -929,6 +1199,112 @@ onBeforeUnmount(() => {
   font-size: 10px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+/* 多指标列表：名称左对齐、数值右对齐，每行按 level 变色 */
+.building-tag__indicators {
+  list-style: none;
+  padding: 2px 0 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 144px;
+}
+
+.building-tag__row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  gap: 10px;
+  padding: 1px 0;
+  font-size: 11px;
+  color: rgba(205, 222, 247, 0.92);
+  line-height: 1.2;
+}
+
+.building-tag__label {
+  color: rgba(169, 196, 232, 0.82);
+  font-size: 11px;
+}
+
+.building-tag__value {
+  justify-self: end;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  font-weight: 600;
+  color: #eaf6ff;
+}
+
+.building-tag__value em {
+  margin-left: 2px;
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 400;
+  color: rgba(169, 196, 232, 0.7);
+}
+
+.building-tag__row--warning .building-tag__value {
+  color: #ffcf80;
+  text-shadow: 0 0 8px rgba(255, 179, 71, 0.35);
+}
+
+.building-tag__row--critical .building-tag__value {
+  color: #ff9f9f;
+  text-shadow: 0 0 10px rgba(255, 91, 97, 0.45);
+}
+
+/* 根据整体 level 给标签边框染色 */
+.building-tag--warning .building-tag__text {
+  border-color: rgba(255, 179, 71, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 221, 151, 0.12),
+    0 12px 26px rgba(5, 14, 28, 0.34),
+    0 0 18px rgba(255, 179, 71, 0.22);
+}
+
+.building-tag--warning .building-tag__halo {
+  background: radial-gradient(circle, rgba(255, 221, 151, 0.95), rgba(255, 179, 71, 0.2));
+  box-shadow:
+    0 0 0 4px rgba(255, 179, 71, 0.1),
+    0 0 18px rgba(255, 179, 71, 0.45);
+}
+
+.building-tag--warning .building-tag__line {
+  background: linear-gradient(90deg, rgba(255, 179, 71, 0.95), rgba(255, 179, 71, 0.15));
+}
+
+.building-tag--critical .building-tag__text {
+  border-color: rgba(255, 91, 97, 0.65);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 170, 175, 0.14),
+    0 12px 26px rgba(5, 14, 28, 0.34),
+    0 0 22px rgba(255, 91, 97, 0.32);
+}
+
+.building-tag--critical .building-tag__halo {
+  background: radial-gradient(circle, rgba(255, 170, 175, 0.95), rgba(255, 91, 97, 0.2));
+  box-shadow:
+    0 0 0 4px rgba(255, 91, 97, 0.12),
+    0 0 22px rgba(255, 91, 97, 0.55);
+  animation: tag-critical-pulse 1.1s ease-in-out infinite;
+}
+
+.building-tag--critical .building-tag__line {
+  background: linear-gradient(90deg, rgba(255, 91, 97, 0.95), rgba(255, 91, 97, 0.15));
+}
+
+@keyframes tag-critical-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 4px rgba(255, 91, 97, 0.12),
+      0 0 18px rgba(255, 91, 97, 0.45);
+  }
+  50% {
+    box-shadow:
+      0 0 0 6px rgba(255, 91, 97, 0.2),
+      0 0 28px rgba(255, 91, 97, 0.75);
+  }
 }
 
 .exceed-warning {

@@ -30,6 +30,78 @@ except Exception as _rag_exc:  # pragma: no cover - 依赖缺失时走兜底
 WARNING_THRESHOLD = 80.0
 CRITICAL_THRESHOLD = 100.0
 SENSOR_INTERVAL_MINUTES = 15
+
+# ---------------------------------------------------------------------------
+# 粒子热力图发射器配置：每个工艺单元一个浓度发射源，前端用这份数据驱动 Three.js 粒子系统。
+# anchor 坐标跟 FactoryScene.vue buildingLabels 的 anchor 严格对齐（场景坐标系）。
+# concField 是 sensor payload 里对应的浓度字段；utility 单元用燃烧温度归一作"燃烧强度"
+# 的代理指标（不是真浓度，但视觉上代表该单元是否在高负荷运行）。
+# ---------------------------------------------------------------------------
+# 每个工艺单元挂 2~3 个工艺指标（indicators[0] = 主指标，决定热力外壳基调
+# 和 emitter-history 弹窗的曲线）。其余指标仅在大屏标签上以 "label: value unit" 逐行列出。
+# maxRatio 取所有指标 ratio 的最大值，用于热力外壳的颜色强度。
+EMITTER_CONFIGS: List[Dict[str, Any]] = [
+    {
+        "id": "coating",
+        "label": "喷涂生产厂房",
+        "anchor": [-3.6, 1.7, 2.55],
+        "indicators": [
+            {"field": "coating_conc", "label": "喷涂浓度", "unit": "mg/m³", "warning": 80.0, "critical": 120.0},
+            {"field": "coating_temp", "label": "喷涂温度", "unit": "°C",   "warning": 40.0,  "critical": 55.0},
+            {"field": "coating_flow", "label": "喷涂风量", "unit": "m³/h", "warning": 14000.0, "critical": 18000.0},
+        ],
+    },
+    {
+        "id": "rotor",
+        "label": "转轮吸附厂房",
+        "anchor": [-1.05, 1.85, 1.85],
+        "indicators": [
+            {"field": "concentrated_conc", "label": "浓缩浓度", "unit": "mg/m³", "warning": 150.0, "critical": 250.0},
+            {"field": "rotor_inlet_temp",  "label": "入口温度", "unit": "°C",   "warning": 45.0,  "critical": 55.0},
+            {"field": "rotor_speed",       "label": "转轮转速", "unit": "rpm",  "warning": 7.0,   "critical": 10.0},
+        ],
+    },
+    {
+        "id": "rto_in",
+        "label": "RTO 主处理厂房",
+        "anchor": [1.95, 2.15, 1.95],
+        "indicators": [
+            {"field": "rto_in_conc",  "label": "RTO入口", "unit": "mg/m³",  "warning": 180.0,  "critical": 280.0},
+            {"field": "rto_in_flow",  "label": "入口流量", "unit": "m³/h",  "warning": 25000.0, "critical": 32000.0},
+            {"field": "rto_in_temp",  "label": "入口温度", "unit": "°C",    "warning": 45.0,    "critical": 60.0},
+        ],
+    },
+    {
+        "id": "utility",
+        "label": "公辅燃烧区",
+        "anchor": [5.15, 1.45, 2.55],
+        "indicators": [
+            {"field": "desorption_temp",      "label": "脱附温度", "unit": "°C",    "warning": 180.0, "critical": 220.0},
+            {"field": "burner_gas_flow",      "label": "燃气流量", "unit": "Nm³/h", "warning": 80.0,  "critical": 110.0},
+            {"field": "adsorption_fan_power", "label": "风机功率", "unit": "kW",    "warning": 40.0,  "critical": 50.0},
+        ],
+    },
+    {
+        "id": "stack",
+        "label": "排口烟囱区",
+        "anchor": [-5.45, 4.95, -0.55],
+        "indicators": [
+            {"field": "rto_out_conc", "label": "RTO出口", "unit": "mg/m³", "warning": WARNING_THRESHOLD, "critical": CRITICAL_THRESHOLD},
+            {"field": "rto_out_temp", "label": "出口温度", "unit": "°C",   "warning": 200.0, "critical": 260.0},
+        ],
+    },
+    {
+        "id": "public",
+        "label": "监测附属区",
+        "anchor": [5.4, 1.1, 4.0],
+        "indicators": [
+            # 环境监测区不直接排污，三项做本底参考；警戒值保持宽松，大部分时候都是浅色
+            {"field": "ambient_humidity", "label": "环境湿度", "unit": "%",   "warning": 85.0,  "critical": 95.0},
+            {"field": "ambient_temp",     "label": "环境温度", "unit": "°C",  "warning": 32.0,  "critical": 38.0},
+            {"field": "ambient_pressure", "label": "环境压力", "unit": "kPa", "warning": 101.8, "critical": 102.5},
+        ],
+    },
+]
 SENSOR_FIELDS = [
     "ambient_temp",
     "ambient_humidity",
@@ -231,6 +303,99 @@ def _alert_banner(current_vocs: float, peak_forecast: float) -> Dict[str, str]:
     return {
         "severity": "normal",
         "text": f"当前 VOCs {current_vocs:.1f} mg/m³，系统运行平稳。",
+    }
+
+
+def _emitter_level(value: float, warning: float, critical: float) -> str:
+    if value >= critical:
+        return "critical"
+    if value >= warning:
+        return "warning"
+    return "normal"
+
+
+def _indicator_ratio(value: float, warning: float, critical: float) -> float:
+    """把 value 归一到 [0, 1.15]：
+    - 0.0 ~ warning → 0.0 ~ 0.6（浅色段，线性）
+    - warning ~ critical → 0.6 ~ 1.0（警戒段）
+    - > critical → > 1.0（最深红）
+
+    这样不管不同指标的量纲差多大，热力外壳的颜色分段都在同一套标准上。
+    """
+    if critical <= 0:
+        return 0.0
+    if value <= 0:
+        return 0.0
+    if value <= warning:
+        return 0.6 * (value / max(warning, 1e-6))
+    if value <= critical:
+        span = max(critical - warning, 1e-6)
+        return 0.6 + 0.4 * ((value - warning) / span)
+    # 超标后继续线性延伸但有上限，避免极端值把颜色打飞
+    return min(1.15, 1.0 + 0.15 * ((value - critical) / max(critical, 1e-6)))
+
+
+def _build_emitter_concentrations(sensor: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """按 EMITTER_CONFIGS 把 26 个传感器字段折叠成 6 个工艺单元的多指标状态。
+    每个单元返回 indicators[] 列表 + 聚合的 maxRatio / level，
+    前端 HeatShell 直接消费 maxRatio 决定外壳颜色、label 层列出所有 indicators。
+    """
+    result: Dict[str, Dict[str, Any]] = {}
+    for cfg in EMITTER_CONFIGS:
+        indicators_out: List[Dict[str, Any]] = []
+        max_ratio = 0.0
+        worst_level = "normal"
+        for ind in cfg["indicators"]:
+            raw = _as_float(sensor.get(ind["field"]))
+            warning = float(ind["warning"])
+            critical = float(ind["critical"])
+            ratio = _indicator_ratio(raw, warning, critical)
+            level = _emitter_level(raw, warning, critical)
+            if ratio > max_ratio:
+                max_ratio = ratio
+            if level == "critical" or (level == "warning" and worst_level == "normal"):
+                worst_level = level
+            indicators_out.append(
+                {
+                    "field": ind["field"],
+                    "label": ind["label"],
+                    "value": _safe_round(raw, 2),
+                    "unit": ind["unit"],
+                    "warning": warning,
+                    "critical": critical,
+                    "ratio": round(ratio, 3),
+                    "level": level,
+                }
+            )
+
+        primary = indicators_out[0]
+        result[cfg["id"]] = {
+            "label": cfg["label"],
+            "anchor": cfg["anchor"],
+            "indicators": indicators_out,
+            "maxRatio": round(max_ratio, 3),
+            "level": worst_level,
+            # 兼容老字段：让只读取顶层 field/value 的调用点继续工作
+            "field": primary["field"],
+            "value": primary["value"],
+            "unit": primary["unit"],
+            "warning": primary["warning"],
+            "critical": primary["critical"],
+        }
+    return result
+
+
+def _build_wind_field(sensor: Dict[str, Any]) -> Dict[str, Any]:
+    """风场：方向固定（沿工艺流向 喷涂→转轮→RTO→烟囱，场景内即 +X 漂向 -X），
+    强度由吸附风机功率归一派生。给粒子系统统一的风场向量。
+    """
+    fan_kw = _as_float(sensor.get("adsorption_fan_power"), 0.0)
+    # 功率典型 15~45 kW，归一到 [0.25, 1.0] 作风速系数
+    speed = max(0.25, min(1.0, fan_kw / 45.0))
+    # 基础方向：从喷涂厂房 (-X 侧) 轻微向排口烟囱 (-X, +Y) 漂，带一点上升分量
+    return {
+        "direction": [-1.0, 0.35, 0.2],
+        "speed": round(speed, 3),
     }
 
 
@@ -565,6 +730,8 @@ async def get_dashboard_overview() -> dict[str, Any]:
         "decision": decision,
         "continuousAlerts": _build_continuous_alerts(alerts),
         "factoryNodes": _build_factory_nodes(sensor, prediction),
+        "emitterConcentrations": _build_emitter_concentrations(sensor),
+        "windField": _build_wind_field(sensor),
     }
 
     if attribution:
@@ -586,6 +753,52 @@ async def get_equipment_status() -> dict[str, Any]:
     sensor = latest_sensor or (history[-1] if history else _normalize_sensor(None))
     prediction = latest_prediction or _build_fallback_prediction(history)
     return _build_equipment_summary(sensor, prediction, alerts)
+
+
+async def get_emitter_history(emitter_id: str, limit: int = 48) -> Optional[Dict[str, Any]]:
+    """读取某个工艺单元"主指标"（indicators[0]）近 N 条历史点，供 FactoryScene
+    里点击标签弹出的小图表使用。找不到该 id 返回 None（router 会抛 404）。
+
+    注：要查看非主指标的历史（例如 coating 的 coating_temp），可以给此函数加
+    indicator query 参数扩展；当前大屏弹窗只消费主指标，保持简单。
+    """
+    cfg = next((c for c in EMITTER_CONFIGS if c["id"] == emitter_id), None)
+    if cfg is None:
+        return None
+
+    primary = cfg["indicators"][0]
+    field = primary["field"]
+    warning = float(primary["warning"])
+    critical = float(primary["critical"])
+    rows = _load_csv_rows(limit=max(limit, 4))
+
+    points: List[Dict[str, Any]] = []
+    for row in rows:
+        raw = _as_float(row.get(field))
+        points.append(
+            {
+                "timestamp": row.get("timestamp") or "",
+                "value": _safe_round(raw, 2),
+            }
+        )
+
+    # 历史字段统计（最近一段），用于 popup 顶部显示
+    values = [p["value"] for p in points] or [0.0]
+    current_value = values[-1] if values else 0.0
+    return {
+        "id": cfg["id"],
+        "label": cfg["label"],
+        "field": field,
+        "unit": primary["unit"],
+        "warning": warning,
+        "critical": critical,
+        "currentValue": _safe_round(current_value, 2),
+        "minValue": _safe_round(min(values), 2),
+        "maxValue": _safe_round(max(values), 2),
+        "avgValue": _safe_round(sum(values) / len(values), 2),
+        "level": _emitter_level(current_value, warning, critical),
+        "points": points,
+    }
 
 
 async def get_anomaly_heatmap(days: int = 7) -> dict[str, Any]:

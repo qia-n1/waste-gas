@@ -5,6 +5,7 @@ import client from "@/api/client";
 import type {
   Attribution,
   DashboardOverview,
+  EmitterConcentrations,
   EquipmentStatusResponse,
   FactoryNode,
   HeatmapResponse,
@@ -12,8 +13,13 @@ import type {
   PredictionPayload,
   SensorPayload,
   TopContributorSeries,
+  WindField,
 } from "@/types/dashboard";
 import { highlightedSensorFields, sensorMeta } from "@/utils/sensorMeta";
+import {
+  buildEmitterConcentrations,
+  buildWindField,
+} from "@/components/dashboard/scene/EmitterConfig";
 
 const createOverview = (): DashboardOverview => ({
   timestamp: "",
@@ -49,6 +55,8 @@ const createOverview = (): DashboardOverview => ({
   },
   continuousAlerts: [],
   factoryNodes: [],
+  emitterConcentrations: {},
+  windField: { direction: [-1, 0.35, 0.2], speed: 0.5 },
 });
 
 const createEquipment = (): EquipmentStatusResponse => ({
@@ -131,6 +139,8 @@ export const useDashboardStore = defineStore("dashboard", () => {
   const heatmap = ref<HeatmapResponse>(createHeatmap());
   const attribution = ref<Attribution | null>(null);
   const topContributorSeries = ref<TopContributorSeries[]>([]);
+  const emitterConcentrations = ref<EmitterConcentrations>({});
+  const windField = ref<WindField>({ direction: [-1, 0.35, 0.2], speed: 0.5 });
   const isExceedWarning = ref(false);
   const loading = ref(false);
   const connected = ref(false);
@@ -150,6 +160,10 @@ export const useDashboardStore = defineStore("dashboard", () => {
       heatmap.value = heatmapResponse.data;
       attribution.value = overviewResponse.data.attribution ?? null;
       topContributorSeries.value = overviewResponse.data.topContributorSeries ?? [];
+      emitterConcentrations.value = overviewResponse.data.emitterConcentrations ?? {};
+      if (overviewResponse.data.windField) {
+        windField.value = overviewResponse.data.windField;
+      }
       isExceedWarning.value = overview.value.metrics.alertLevel !== "normal";
     } finally {
       loading.value = false;
@@ -176,6 +190,11 @@ export const useDashboardStore = defineStore("dashboard", () => {
       payload.combustion_temp,
       overview.value.metrics.peakForecast,
     );
+    // 粒子系统 reactive 源：每次 SSE sensor_data 都重算 6 个发射器浓度 + 风场
+    emitterConcentrations.value = buildEmitterConcentrations(payload);
+    windField.value = buildWindField(payload);
+    overview.value.emitterConcentrations = emitterConcentrations.value;
+    overview.value.windField = windField.value;
   };
 
   const updateFromPrediction = (payload: PredictionPayload, latestSensor?: SensorPayload) => {
@@ -236,6 +255,8 @@ export const useDashboardStore = defineStore("dashboard", () => {
     heatmap,
     attribution,
     topContributorSeries,
+    emitterConcentrations,
+    windField,
     isExceedWarning,
     loading,
     connected,
