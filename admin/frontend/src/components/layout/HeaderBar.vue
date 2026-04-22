@@ -127,7 +127,6 @@ const formattedTime = computed(() => now.value.format("YYYY-MM-DD HH:mm"));
         <div class="drawer-header">
           <span class="drawer-eyebrow">Navigation</span>
           <h2>系统菜单</h2>
-          <p>在不打断当前看板布局的前提下快速切换页面。</p>
         </div>
 
         <nav class="drawer-nav">

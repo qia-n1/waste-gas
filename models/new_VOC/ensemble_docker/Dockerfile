@@ -15,7 +15,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements_deploy.txt /app/
 
 # 安装 Python 依赖
-RUN pip install --no-cache-dir -r requirements_deploy.txt
+RUN pip install --upgrade pip && \
+    pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.0.0" && \
+    grep -v '^torch' requirements_deploy.txt > /tmp/requirements-no-torch.txt && \
+    pip install --no-cache-dir -r /tmp/requirements-no-torch.txt
 
 # 将项目的所有源码复制到容器内
 COPY . /app/

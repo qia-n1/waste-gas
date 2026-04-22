@@ -51,7 +51,7 @@ const createOverview = (): DashboardOverview => ({
   keyParameters: [],
   decision: {
     summary: "正在等待 VOCs 监测数据。",
-    suggestions: ["请先启动共享 VOCs 服务，或使用本地 CSV 回放数据。"],
+    suggestions: ["请先启动 VOCs 服务，或检查模型端实时数据回放。"],
   },
   continuousAlerts: [],
   factoryNodes: [],
@@ -155,12 +155,14 @@ export const useDashboardStore = defineStore("dashboard", () => {
         client.get<EquipmentStatusResponse>("/dashboard/equipment-status"),
         client.get<HeatmapResponse>("/dashboard/anomaly-heatmap"),
       ]);
+
       overview.value = overviewResponse.data;
       equipmentStatus.value = equipmentResponse.data;
       heatmap.value = heatmapResponse.data;
       attribution.value = overviewResponse.data.attribution ?? null;
       topContributorSeries.value = overviewResponse.data.topContributorSeries ?? [];
       emitterConcentrations.value = overviewResponse.data.emitterConcentrations ?? {};
+      overview.value.continuousAlerts = overviewResponse.data.continuousAlerts ?? [];
       if (overviewResponse.data.windField) {
         windField.value = overviewResponse.data.windField;
       }
@@ -190,7 +192,6 @@ export const useDashboardStore = defineStore("dashboard", () => {
       payload.combustion_temp,
       overview.value.metrics.peakForecast,
     );
-    // 粒子系统 reactive 源：每次 SSE sensor_data 都重算 6 个发射器浓度 + 风场
     emitterConcentrations.value = buildEmitterConcentrations(payload);
     windField.value = buildWindField(payload);
     overview.value.emitterConcentrations = emitterConcentrations.value;
@@ -204,17 +205,15 @@ export const useDashboardStore = defineStore("dashboard", () => {
       Math.max(...(payload.predicted_values || [0])),
     );
     overview.value.metrics.confidence = roundNumber(payload.confidence * 100, 0);
-    overview.value.metrics.predictionType = payload.prediction_type || "SSE";
+    overview.value.metrics.predictionType = payload.prediction_type || "ImprovedSeq2Seq";
     overview.value.metrics.alertLevel = getStatusByValue(
       Math.max(overview.value.metrics.currentVocs, overview.value.metrics.peakForecast),
     );
     overview.value.trend.confidence = payload.confidence;
-    overview.value.trend.forecastSeries = (payload.predicted_values || []).map(
-      (value, index) => ({
-        timestamp: new Date(start.getTime() + (index + 1) * 15 * 60 * 1000).toISOString(),
-        value: roundNumber(value),
-      }),
-    );
+    overview.value.trend.forecastSeries = (payload.predicted_values || []).map((value, index) => ({
+      timestamp: new Date(start.getTime() + (index + 1) * 15 * 60 * 1000).toISOString(),
+      value: roundNumber(value),
+    }));
 
     if (latestSensor) {
       overview.value.decision.summary = buildDecisionSummary(

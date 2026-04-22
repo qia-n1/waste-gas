@@ -1,0 +1,113 @@
+# 智洁园区 · 废气综合管理平台 —— 一键部署 (生产 / 演示用)
+#
+# 用法：
+#   docker compose -f docker-compose.prod.yml build
+#   docker compose -f docker-compose.prod.yml up -d
+#   浏览器访问  http://<服务器IP>:3001  即可
+#
+# 默认管理员账号：admin / admin123456 （首次登录后请修改 .env）
+
+services:
+  # ========================================
+  # 1) 集成学习预测服务 (port 8000)
+  # ========================================
+  ensemble:
+    build:
+      context: ./models/new_VOC/ensemble_docker
+      dockerfile: Dockerfile
+    image: waste-gas/ensemble:latest
+    container_name: wg-ensemble
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=Asia/Shanghai
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+    networks: [wg-net]
+
+  # ========================================
+  # 2) VOCs 实时推理服务 (port 8001)
+  # ========================================
+  vocs-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: waste-gas/vocs-server:latest
+    container_name: wg-vocs-server
+    ports:
+      - "8001:8001"
+    environment:
+      - MODEL_PATH=models/vocs_seq2seq_v2_best.pth
+      - SCALER_PATH=models/vocs_scalers_v2.pkl
+      - CSV_PATH=vocs_realtime_data/vocs_realtime_data.csv
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./vocs_realtime_data:/app/vocs_realtime_data
+      - ./models:/app/models
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/status')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks: [wg-net]
+
+  # ========================================
+  # 3) 管理端后端 (port 8003)
+  # ========================================
+  admin-backend:
+    build:
+      context: .
+      dockerfile: admin/backend/Dockerfile
+    image: waste-gas/admin-backend:latest
+    container_name: wg-admin-backend
+    ports:
+      - "8003:8003"
+    environment:
+      - TZ=Asia/Shanghai
+      # 服务发现：容器内用服务名互访
+      - VOCS_BASE_URL=http://vocs-server:8001
+      - ENSEMBLE_BASE_URL=http://ensemble:8000
+      # 凭据 / JWT —— 生产环境请通过 .env 覆盖
+      - ADMIN_JWT_SECRET=${ADMIN_JWT_SECRET:-please-change-me-in-production}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123456}
+      - ADMIN_TOKEN_EXPIRE_MINUTES=${ADMIN_TOKEN_EXPIRE_MINUTES:-120}
+      # PostgreSQL：默认指向项目组开发库；可通过 .env 覆盖到自有数据库
+      - PG_HOST=${PG_HOST:-98.142.241.155}
+      - PG_PORT=${PG_PORT:-5432}
+      - PG_DB=${PG_DB:-aqimonitor}
+      - PG_USER=${PG_USER:-team}
+      - PG_PASSWORD=${PG_PASSWORD:-fwwb1234}
+    depends_on:
+      - vocs-server
+      - ensemble
+    restart: unless-stopped
+    networks: [wg-net]
+
+  # ========================================
+  # 4) 管理端前端 (容器内 80，对外暴露 3001)
+  # ========================================
+  admin-frontend:
+    build:
+      context: .
+      dockerfile: admin/frontend/Dockerfile
+    image: waste-gas/admin-frontend:latest
+    container_name: wg-admin-frontend
+    ports:
+      - "80:80"
+      - "3001:80"
+    depends_on:
+      - admin-backend
+    restart: unless-stopped
+    networks: [wg-net]
+
+networks:
+  wg-net:
+    driver: bridge
+    name: waste-gas-net

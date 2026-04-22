@@ -1,49 +1,80 @@
-# Python 缓存文件
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
+# 顶层 .dockerignore：用于 vocs-server / admin-backend / admin-frontend 的构建上下文
+# 排除一切跟容器无关的大目录，保证构建上下文 < 200MB
 
-# 虚拟环境
-venv/
-env/
-ENV/
-.venv
-
-# IDE 配置
-.vscode/
-.idea/
+# IDE / OS
+.git
+.gitignore
+.idea
+.vscode
+.DS_Store
+Thumbs.db
 *.swp
 *.swo
+*.bak
 
-# 数据文件（不要打包到镜像中）
+# Python
+**/__pycache__
+**/*.py[cod]
+*$py.class
+*.so
+**/.pytest_cache
+**/.mypy_cache
+**/.venv
+**/venv
+**/env
+**/ENV
+
+# Node
+**/node_modules
+**/dist
+**/.vite
+
+# 文档与样例（不进镜像）
+*.docx
+*.pdf
+*.tex
+*.aux
+*.toc
+*.out
+*.log
+~$*
+说明文档.docx
+启动指南.txt
+README.md
+
+# 数据 / CSV（运行时通过 volume 挂载）
 vocs_realtime_data/
 *.csv
-*.log
 
 # 测试文件
 test_*.py
 *_test.py
 
-# 编译文件
+# 编译产物
 *.exe
 *.dll
 *.dylib
 
-# 文档
-说明文档.docx
-启动指南.txt
-README.md
+# 日志与临时
+backend/backend-stdout.log
+backend/backend-stderr.log
+nginx-1.28.0/logs
 
-# Git
-.git/
-.gitignore
+# 大目录：旧版本 / 同事用户端 / 单独打包的子项目，与本次 prod 部署无关
+frontend/
+backend/
+client-frontend/
+client-backend/
+uniapp-client/
+vocs-project/
+nginx-1.28.0/
+Postman测试/
+src/
 
-# Docker 相关
-Dockerfile
-.dockerignore
-docker-compose*.yml
+# ensemble_docker 由其自身目录作为 build context；根上下文不需要再包含一遍
+models/new_VOC/
 
-# 其他
-.DS_Store
-*.bak
+# 本地环境文件（防止泄漏）
+.env
+.env.*
+!.env.example

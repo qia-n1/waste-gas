@@ -1,10 +1,6 @@
 <script setup lang="ts">
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
-import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
-import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
-import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import type {
@@ -14,7 +10,6 @@ import type {
 } from "@/types/dashboard";
 import EmitterHistoryPopup from "./EmitterHistoryPopup.vue";
 import { EMITTER_DEFINITIONS } from "./scene/EmitterConfig";
-import { HeatShellSet } from "./scene/HeatShell";
 
 const props = defineProps<{
   nodes: FactoryNode[];
@@ -38,11 +33,6 @@ let scene: THREE.Scene | null = null;
 let camera: THREE.PerspectiveCamera | null = null;
 let campusGroup: THREE.Group | null = null;
 let controls: OrbitControls | null = null;
-// 热力外壳集合：每个工艺单元一个发光 mesh，颜色由浓度 ratio 驱动
-let heatShells: HeatShellSet | null = null;
-// 后处理 pipeline：RenderPass → UnrealBloomPass → OutputPass
-let composer: EffectComposer | null = null;
-let bloomPass: UnrealBloomPass | null = null;
 let frameId = 0;
 const clock = new THREE.Clock();
 const raycaster = new THREE.Raycaster();
@@ -589,9 +579,6 @@ const resizeScene = () => {
   renderer.setSize(clientWidth, clientHeight);
   camera.aspect = clientWidth / clientHeight;
   camera.updateProjectionMatrix();
-  if (composer) {
-    composer.setSize(clientWidth, clientHeight);
-  }
   hostSize.value = { width: clientWidth, height: clientHeight };
 };
 
@@ -659,20 +646,12 @@ const updateBuildingLabels = () => {
   projectedBuildingLabels.value = results;
 };
 
-/** 把 store 里的最新浓度推给热力外壳（smoothed tick 在 animate 里做）。 */
-const pushConcentrationsToShells = () => {
-  if (!heatShells) return;
-  const concs = props.emitterConcentrations;
-  if (concs) heatShells.updateFromConcentrations(concs);
-};
-
 const animate = () => {
   if (!renderer || !scene || !camera || !campusGroup) {
     return;
   }
 
-  const dt = clock.getDelta();
-  const elapsed = clock.elapsedTime;
+  const elapsed = clock.getElapsedTime();
   campusGroup.rotation.y = -0.46 + Math.sin(elapsed * 0.18) * 0.035;
   campusGroup.position.y = Math.sin(elapsed * 0.55) * 0.04;
   if (controls) {
@@ -710,19 +689,7 @@ const animate = () => {
   });
 
   updateBuildingLabels();
-
-  // 热力外壳：每帧 smoothing 到目标 ratio + pulse 相位
-  if (heatShells) {
-    heatShells.tick(dt, elapsed);
-  }
-
-  // 后处理 pipeline（Render → Bloom → Output），composer 内部会自己调 renderer
-  if (composer) {
-    composer.render();
-  } else {
-    renderer.render(scene, camera);
-  }
-
+  renderer.render(scene, camera);
   frameId = requestAnimationFrame(animate);
 };
 
@@ -796,33 +763,6 @@ onMounted(() => {
   buildMarkers();
   buildSmoke();
   updateMarkers();
-
-  // 热力外壳：每个工艺单元一个发光罩，颜色由浓度 ratio 驱动。
-  // 加到 campusGroup 下而不是 scene 下，这样 breathing 动画会带着外壳一起动。
-  if (campusGroup) {
-    heatShells = new HeatShellSet(campusGroup, EMITTER_DEFINITIONS);
-    pushConcentrationsToShells();
-  }
-
-  // 后处理：RenderPass → UnrealBloomPass（让外壳颜色有"溢出"泛光）→ OutputPass。
-  // 参数调优历史：之前 threshold=0.25 + strength=0.55 会把浅灰建筑和 ambient 光
-  // 一起拉进 bloom，整屏发白。现在 threshold=0.88 只吃热力外壳里最饱和的红/橙段，
-  // strength=0.28、radius=0.45 让泛光保持轻量、不糊。
-  {
-    const { clientWidth, clientHeight } = sceneRef.value;
-    composer = new EffectComposer(renderer);
-    composer.setSize(clientWidth, clientHeight);
-    composer.addPass(new RenderPass(scene, camera));
-    bloomPass = new UnrealBloomPass(
-      new THREE.Vector2(clientWidth, clientHeight),
-      0.28, // strength
-      0.45, // radius
-      0.88, // threshold
-    );
-    composer.addPass(bloomPass);
-    composer.addPass(new OutputPass());
-  }
-
   resizeScene();
   syncHostSize();
   animate();
@@ -840,30 +780,11 @@ watch(
   { deep: true },
 );
 
-// SSE 更新浓度时把目标 ratio 推给 HeatShell。实际 uniform 刷新 + 平滑插值在
-// animate() 的 tick() 里完成，保证颜色过渡柔和，不会跳变。
-watch(
-  () => props.emitterConcentrations,
-  () => {
-    pushConcentrationsToShells();
-  },
-  { deep: true },
-);
-
 onBeforeUnmount(() => {
   cancelAnimationFrame(frameId);
   window.removeEventListener("resize", resizeScene);
   sceneRef.value?.removeEventListener("pointermove", updatePointer);
   sceneRef.value?.removeEventListener("pointerleave", clearHover);
-  if (heatShells) {
-    heatShells.dispose();
-    heatShells = null;
-  }
-  if (composer) {
-    composer.dispose();
-    composer = null;
-  }
-  bloomPass = null;
   disposeScene();
   controls?.dispose();
   controls = null;

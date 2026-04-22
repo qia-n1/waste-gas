@@ -77,7 +77,6 @@ const emitRateForSource = (src: FlowSource): number => {
 export class ParticleFlowField {
   private readonly canvas: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
-  private dpr = 1;
   private cssWidth = 0;
   private cssHeight = 0;
 
@@ -107,7 +106,6 @@ export class ParticleFlowField {
   /** 画布 CSS 尺寸变化时调用。自动处理 HiDPI。 */
   resize(cssWidth: number, cssHeight: number): void {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    this.dpr = dpr;
     this.cssWidth = cssWidth;
     this.cssHeight = cssHeight;
     this.canvas.width = Math.max(1, Math.round(cssWidth * dpr));

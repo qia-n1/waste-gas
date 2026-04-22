@@ -1,0 +1,720 @@
+\documentclass[UTF8,a4paper,11pt]{ctexart}
+
+% --- 页面与字体 ---
+\usepackage[margin=2.3cm]{geometry}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{enumitem}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{tcolorbox}
+\usepackage{hyperref}
+\usepackage{listings}
+
+\tcbuselibrary{skins,breakable}
+
+% --- 颜色 ---
+\definecolor{accentblue}{HTML}{1F5FAD}
+\definecolor{accentcyan}{HTML}{0A7D96}
+\definecolor{warnorange}{HTML}{B86E00}
+\definecolor{dangerred}{HTML}{B42020}
+\definecolor{softgray}{HTML}{F4F6FA}
+\definecolor{bordergray}{HTML}{D7DCE5}
+\definecolor{codebg}{HTML}{F7F8FC}
+
+% --- 超链接 ---
+\hypersetup{
+  colorlinks=true,
+  linkcolor=accentblue,
+  urlcolor=accentcyan,
+  citecolor=accentblue,
+  pdftitle={废气综合管理平台 部署手册},
+  pdfauthor={智洁园区项目组}
+}
+
+% --- 标题样式 ---
+\titleformat{\section}
+  {\Large\bfseries\color{accentblue}}
+  {\thesection}{0.6em}{}
+  [\vspace{2pt}{\color{bordergray}\titlerule[0.8pt]}]
+\titleformat{\subsection}
+  {\large\bfseries\color{accentcyan}}
+  {\thesubsection}{0.5em}{}
+\titleformat{\subsubsection}
+  {\normalsize\bfseries}
+  {\thesubsubsection}{0.5em}{}
+
+% --- 页眉页脚 ---
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{accentblue}\textbf{废气综合管理平台}}
+\fancyhead[R]{\small\color{accentcyan}系统部署手册}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+
+% --- listings 代码样式 ---
+\lstdefinestyle{shellstyle}{
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{codebg},
+  frame=single,
+  rulecolor=\color{bordergray},
+  framesep=4pt,
+  xleftmargin=6pt,
+  xrightmargin=4pt,
+  breaklines=true,
+  breakatwhitespace=true,
+  showstringspaces=false,
+  keywordstyle=\color{accentblue}\bfseries,
+  commentstyle=\color{gray}\itshape,
+  stringstyle=\color{warnorange},
+  aboveskip=6pt,
+  belowskip=6pt,
+}
+\lstset{style=shellstyle}
+\lstdefinelanguage{dockerfile}{
+  keywords={FROM,RUN,CMD,ENV,COPY,ADD,WORKDIR,EXPOSE,VOLUME,ENTRYPOINT,USER,ARG,LABEL,HEALTHCHECK},
+  sensitive=true,
+  morecomment=[l]{\#},
+  morestring=[b]"
+}
+
+% --- tcolorbox 样式 ---
+\newtcolorbox{infobox}[1][]{
+  colback=softgray, colframe=accentblue, coltitle=white,
+  fonttitle=\bfseries, title=#1,
+  sharp corners=downhill, boxrule=0.6pt, left=8pt, right=8pt, top=6pt, bottom=6pt,
+  breakable
+}
+\newtcolorbox{warnbox}[1][]{
+  colback=softgray, colframe=warnorange, coltitle=white,
+  fonttitle=\bfseries, title=#1,
+  sharp corners=downhill, boxrule=0.6pt, left=8pt, right=8pt, top=6pt, bottom=6pt,
+  breakable
+}
+\newtcolorbox{dangerbox}[1][]{
+  colback=softgray, colframe=dangerred, coltitle=white,
+  fonttitle=\bfseries, title=#1,
+  sharp corners=downhill, boxrule=0.6pt, left=8pt, right=8pt, top=6pt, bottom=6pt,
+  breakable
+}
+
+% --- 表格辅助 ---
+\renewcommand{\arraystretch}{1.25}
+\setlength{\tabcolsep}{6pt}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+% --- 文档 ---
+\begin{document}
+
+% --- 封面 ---
+\begin{titlepage}
+\centering
+\vspace*{2.5cm}
+{\color{accentblue}\rule{14cm}{1.2pt}}\par
+\vspace{0.4cm}
+{\Huge\bfseries 智洁园区\,·\,废气综合管理平台\par}
+\vspace{0.6cm}
+{\LARGE\bfseries\color{accentblue} 系统部署手册\par}
+\vspace{0.3cm}
+{\color{accentblue}\rule{14cm}{1.2pt}}\par
+\vspace{1.8cm}
+{\large 含\,Docker 部署步骤\,·\,环境配置要求\,·\,依赖包清单\,·\,常见问题排查\par}
+\vfill
+\begin{tabular}{rl}
+  \textbf{文档版本} & v1.0 \\
+  \textbf{发布日期} & 2026-04-21 \\
+  \textbf{适用版本} & admin-frontend 1.0.0 / admin-backend 0.1.0 \\
+  \textbf{编写团队} & 智洁园区项目组 \\
+\end{tabular}
+\vspace{2cm}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% ========== 1 项目概述 ==========
+\section{项目概述}
+
+\subsection{系统简介}
+智洁园区废气综合管理平台是一套面向工业园区废气治理的实时监测、智能预警与辅助决策系统。
+系统通过对现场 RTO（蓄热式热氧化炉）、转轮吸附装置、喷涂工艺段等关键工段的 26 项传感器数据进行
+秒级采集、分钟级预测，结合 AI 模型输出未来 6 小时 VOCs 浓度趋势、异常根因归因与
+RAG（检索增强生成）处置建议，支撑运行人员、运维人员与管理人员三级协同处置。
+
+\subsection{子系统构成}
+
+\begin{longtable}{L{3.0cm} L{3.5cm} L{2.0cm} L{5.0cm}}
+\toprule
+\textbf{子系统} & \textbf{目录} & \textbf{端口} & \textbf{职责} \\
+\midrule
+\endhead
+ML 推理服务      & \texttt{./} (根目录)              & 8001 & 传感器数据接入、LSTM/Seq2Seq 预测、SSE 实时推送 \\
+管理端后端        & \texttt{admin/backend/}           & 8002 & 管理大屏聚合 API、JWT 鉴权、RAG、告警管理 \\
+管理端前端        & \texttt{admin/frontend/}          & 5173 & 管理大屏 Vue3 + Three.js 可视化前端 \\
+用户端后端        & \texttt{client-backend/}          & 8003 & 面向园区用户的 REST API \\
+用户端前端        & \texttt{client-frontend/}         & ---  & uni-app 小程序 / H5 \\
+PostgreSQL       & TimescaleDB (容器)                 & 5432 & 告警历史、工单、RAG 计划持久化 \\
+Redis            & Redis 7 (容器)                     & 6379 & 热点缓存（可选） \\
+Nginx            & \texttt{nginx-1.28.0/}            & 5050 & 反向代理与静态资源 \\
+\bottomrule
+\end{longtable}
+
+\subsection{数据流概览}
+
+\begin{infobox}[数据流]
+\textbf{现场 PLC / DCS} $\longrightarrow$
+\texttt{POST /sensor-data} $\longrightarrow$
+\textbf{vocs\_server (8001)} $\longrightarrow$
+\texttt{SSE /events} $\longrightarrow$
+\textbf{admin-backend (8002)} $\longrightarrow$
+\texttt{GET /api/dashboard/overview} $+$ \texttt{SSE /api/events} $\longrightarrow$
+\textbf{admin-frontend (5173)}
+\end{infobox}
+
+% ========== 2 环境配置要求 ==========
+\section{环境配置要求}
+
+\subsection{硬件最低配置}
+
+\begin{longtable}{L{3.0cm} L{4.5cm} L{4.5cm}}
+\toprule
+\textbf{项目} & \textbf{最低配置（开发/演示）} & \textbf{推荐配置（生产）} \\
+\midrule
+\endhead
+CPU      & 4 核（x86\_64）        & 8 核以上，支持 AVX2 \\
+内存      & 8 GB                  & 16 GB 及以上 \\
+硬盘      & 40 GB SSD             & 100 GB SSD（RAID1） \\
+GPU      & 非必须                & 可选 NVIDIA T4/A10（加速 Torch 推理） \\
+网络      & 千兆内网              & 千兆内网 + 公网备用链路 \\
+\bottomrule
+\end{longtable}
+
+\subsection{操作系统与基础软件}
+
+\begin{itemize}[leftmargin=1.4em,itemsep=2pt]
+  \item \textbf{操作系统}：Ubuntu 22.04 LTS 或 CentOS 7.9 / Rocky Linux 9；Windows 10/11（仅限本地开发）
+  \item \textbf{Docker Engine}：\texttt{>= 24.0}
+  \item \textbf{Docker Compose}：\texttt{v2.20} 及以上（Compose V2 插件形式）
+  \item \textbf{Python}：3.10（ML 服务）/ 3.11（管理端后端均可运行）
+  \item \textbf{Node.js}：\texttt{>= 18.18}，推荐 \texttt{20.x LTS}
+  \item \textbf{Nginx}：\texttt{>= 1.24}（非 Docker 部署时需要）
+  \item \textbf{PostgreSQL}：14/15（推荐 \texttt{timescale/timescaledb:latest-pg15}）
+  \item \textbf{时区}：\texttt{Asia/Shanghai}（容器 \texttt{TZ} 环境变量已显式声明）
+\end{itemize}
+
+\begin{warnbox}[注意：Torch 版本一致性]
+项目根目录 \texttt{requirements.txt} 固定 \texttt{torch==2.7.0}，\texttt{admin/backend/requirements.txt}
+固定 \texttt{torch==2.3.1}。两者分属独立虚拟环境或独立容器，\textbf{切勿合并安装到同一个 venv}，否则会触发
+CUDA 版本冲突与模型反序列化失败。
+\end{warnbox}
+
+% ========== 3 依赖包清单 ==========
+\section{依赖包清单}
+
+\subsection{ML 推理服务（根目录 requirements.txt）}
+
+\begin{longtable}{L{3.8cm} L{2.2cm} L{7.0cm}}
+\toprule
+\textbf{包名} & \textbf{版本} & \textbf{说明} \\
+\midrule
+\endhead
+fastapi            & 0.104.1 & Web 框架 \\
+uvicorn            & 0.24.0  & ASGI 服务器 \\
+torch              & 2.7.0   & 深度学习推理，Seq2Seq 预测模型 \\
+numpy              & >=1.26.0 & 数值计算 \\
+pandas             & >=2.0.3  & 时序数据处理 \\
+pydantic           & 2.4.0    & 数据校验与序列化 \\
+requests           & 2.31.0   & 同步 HTTP 客户端（测试脚本） \\
+sseclient          & 0.0.27   & SSE 测试客户端 \\
+scikit-learn       & 1.7.0    & StandardScaler 反归一化 \\
+\bottomrule
+\end{longtable}
+
+\subsection{管理端后端（admin/backend/requirements.txt）}
+
+\begin{longtable}{L{3.8cm} L{2.2cm} L{7.0cm}}
+\toprule
+\textbf{包名} & \textbf{版本} & \textbf{说明} \\
+\midrule
+\endhead
+fastapi                   & 0.116.1 & Web 框架 \\
+uvicorn                   & 0.35.0  & ASGI 服务器 \\
+httpx                     & 0.28.1  & 异步 HTTP，代理到 \texttt{vocs\_server} \\
+pyjwt                     & 2.10.1  & 管理员 JWT 颁发与校验 \\
+pydantic                  & 2.11.7  & 数据模型 \\
+psycopg2-binary           & 2.9.10  & PostgreSQL 驱动 \\
+python-dotenv             & 1.2.2   & \texttt{.env} 加载 \\
+sentence-transformers     & 2.2.2   & RAG 向量化 \\
+torch                     & 2.3.1   & 向量模型推理 \\
+openai                    & 2.31.0  & 大模型接口（RAG 生成端） \\
+numpy                     & 1.26.4  & 向量运算 \\
+pandas                    & 3.0.2   & 结构化数据 \\
+pypdf                     & 6.10.0  & RAG 知识库 PDF 解析 \\
+python-docx               & 1.2.0   & RAG 知识库 DOCX 解析 \\
+\bottomrule
+\end{longtable}
+
+\subsection{管理端前端（admin/frontend/package.json）}
+
+\begin{longtable}{L{4.2cm} L{2.0cm} L{6.8cm}}
+\toprule
+\textbf{依赖} & \textbf{版本} & \textbf{说明} \\
+\midrule
+\endhead
+vue                        & \^{}3.5.32   & 核心框架 \\
+vue-router                 & \^{}4.6.4    & 路由 \\
+pinia                      & \^{}3.0.2    & 状态管理 \\
+axios                      & \^{}1.15.0   & HTTP 客户端 \\
+element-plus               & \^{}2.9.7    & 主题组件库（暗黑模式） \\
+@element-plus/icons-vue    & \^{}2.3.1    & 图标集 \\
+echarts                    & \^{}6.0.0    & 图表 \\
+vue-echarts                & \^{}8.0.1    & ECharts Vue 封装 \\
+three                      & \^{}0.183.2  & 3D 工厂可视化 \\
+dayjs                      & \^{}1.11.13  & 时间格式化 \\
+vite                       & \^{}5.4.19   & 构建工具 (dev) \\
+typescript                 & \~{}6.0.2    & 类型系统 (dev) \\
+vue-tsc                    & \^{}3.2.6    & Vue 类型检查 (dev) \\
+\bottomrule
+\end{longtable}
+
+% ========== 4 Docker 部署步骤 ==========
+\section{Docker 部署步骤}
+
+\subsection{目录准备}
+
+\begin{lstlisting}[language=bash]
+# 1. 克隆代码
+git clone <your-repo-url> waste-gas
+cd waste-gas
+
+# 2. 目录结构确认
+ls -al
+# 应包含: vocs_server.py  admin/  backend/  client-backend/
+#        Dockerfile  docker-compose.yml  models/  requirements.txt
+\end{lstlisting}
+
+\subsection{编写/确认环境变量文件}
+
+在项目根目录创建 \texttt{.env}（\textbf{不要提交到 Git}），生产环境请替换为强密码：
+
+\begin{lstlisting}[language=bash]
+# ========== 管理端后端 ==========
+ADMIN_JWT_SECRET=please-change-me-in-production
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=YourStrongPassword!2026
+ADMIN_TOKEN_EXPIRE_MINUTES=120
+
+# ========== 数据库 ==========
+PG_HOST=postgres
+PG_PORT=5432
+PG_DB=aqimonitor
+PG_USER=team
+PG_PASSWORD=YourDbPassword!2026
+PG_POOL_MIN=1
+PG_POOL_MAX=8
+
+# ========== ML 服务 ==========
+MODEL_PATH=models/vocs_seq2seq_v2_best.pth
+SCALER_PATH=models/vocs_scalers_v2.pkl
+CSV_PATH=vocs_realtime_data/vocs_realtime_data.csv
+TZ=Asia/Shanghai
+
+# ========== RAG (可选) ==========
+OPENAI_API_KEY=sk-xxx
+OPENAI_BASE_URL=https://api.openai.com/v1
+\end{lstlisting}
+
+\subsection{一键启动全部服务}
+
+项目根目录已提供 \texttt{Dockerfile} 与 \texttt{docker-compose.yml}。默认仅启动 ML 推理服务；
+管理端、用户端与数据库请按需启用。
+
+\begin{lstlisting}[language=bash]
+# 构建镜像（首次/代码变更后执行）
+docker compose build
+
+# 启动 ML 推理服务 (8001) —— 仅启动 vocs-server
+docker compose up -d vocs-server
+
+# 同时启动 Postgres + Redis 基础设施（profiles: infra）
+docker compose --profile infra up -d
+
+# 查看容器状态
+docker compose ps
+
+# 查看日志
+docker compose logs -f vocs-server
+\end{lstlisting}
+
+\subsection{管理端独立镜像（推荐扩展配置）}
+
+当前仓库内 \texttt{docker-compose.yml} 默认只打包 \texttt{vocs\_server}。
+生产环境建议在 \texttt{admin/backend} 与 \texttt{admin/frontend} 下分别新建 Dockerfile，并在
+compose 中加入对应服务定义：
+
+\begin{lstlisting}[language=dockerfile]
+# admin/backend/Dockerfile
+FROM python:3.11-slim
+WORKDIR /app
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 TZ=Asia/Shanghai
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential libpq-dev && rm -rf /var/lib/apt/lists/*
+COPY admin/backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY admin/backend/ ./
+EXPOSE 8002
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8002"]
+\end{lstlisting}
+
+\begin{lstlisting}[language=dockerfile]
+# admin/frontend/Dockerfile (多阶段构建)
+FROM node:20-alpine AS build
+WORKDIR /app
+COPY admin/frontend/package*.json ./
+RUN npm ci
+COPY admin/frontend/ ./
+RUN npm run build
+
+FROM nginx:1.27-alpine
+COPY --from=build /app/dist /usr/share/nginx/html
+COPY admin/frontend/nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
+\end{lstlisting}
+
+\subsection{在 docker-compose.yml 中追加管理端服务}
+
+\begin{lstlisting}[language=bash]
+  admin-backend:
+    build:
+      context: .
+      dockerfile: admin/backend/Dockerfile
+    container_name: admin-backend
+    ports: ["8002:8002"]
+    env_file: [.env]
+    environment:
+      - VOCS_BASE_URL=http://vocs-server:8001
+    depends_on: [vocs-server, postgres]
+    restart: unless-stopped
+    networks: [vocs-network]
+
+  admin-frontend:
+    build:
+      context: .
+      dockerfile: admin/frontend/Dockerfile
+    container_name: admin-frontend
+    ports: ["5173:80"]
+    depends_on: [admin-backend]
+    restart: unless-stopped
+    networks: [vocs-network]
+\end{lstlisting}
+
+\subsection{启动顺序与健康检查}
+
+\begin{enumerate}[leftmargin=1.6em]
+  \item 启动数据库与缓存：\texttt{docker compose --profile infra up -d postgres redis}
+  \item 等待数据库就绪（约 15 秒）：\texttt{docker compose logs postgres | grep "ready to accept"}
+  \item 启动 ML 服务：\texttt{docker compose up -d vocs-server}
+  \item 观察 healthcheck：\texttt{docker inspect -{}-format "\{\{.State.Health.Status\}\}" vocs-control-system}
+  \item 启动管理端：\texttt{docker compose up -d admin-backend admin-frontend}
+  \item 浏览器访问：\url{http://<服务器IP>:5173}
+\end{enumerate}
+
+\begin{infobox}[默认账户]
+\textbf{管理员用户名}：\texttt{admin} \quad \textbf{默认密码}：\texttt{admin123456} \\
+首次登录后请立即通过 \texttt{.env} 的 \texttt{ADMIN\_PASSWORD} 修改并重启 \texttt{admin-backend}。
+\end{infobox}
+
+\subsection{数据持久化与备份}
+
+\begin{itemize}[leftmargin=1.4em,itemsep=2pt]
+  \item \textbf{实时 CSV 回放数据}：卷挂载 \texttt{./vocs\_realtime\_data} $\rightarrow$ \texttt{/app/vocs\_realtime\_data}
+  \item \textbf{模型文件}：卷挂载 \texttt{./models} $\rightarrow$ \texttt{/app/models}（用于热更新）
+  \item \textbf{PostgreSQL 数据}：命名卷 \texttt{postgres\_data}；建议每日 \texttt{pg\_dump} 备份
+  \item \textbf{Redis 数据}：命名卷 \texttt{redis\_data}，AOF 持久化已开启
+\end{itemize}
+
+\begin{lstlisting}[language=bash]
+# 数据库每日备份（建议配合 cron）
+docker exec vocs-postgres pg_dump -U team -d aqimonitor \
+  | gzip > backup/pg_$(date +%Y%m%d).sql.gz
+\end{lstlisting}
+
+% ========== 5 非 Docker 部署 ==========
+\section{非 Docker 源码部署}
+
+适用于本地开发调试、答辩演示或无法使用 Docker 的现场环境。
+
+\subsection{ML 推理服务}
+
+\begin{lstlisting}[language=bash]
+# Windows PowerShell 示例（Linux 将 python 换成 python3、venv 激活脚本换成 source）
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+python vocs_server.py
+# 或
+uvicorn vocs_server:app --host 0.0.0.0 --port 8001
+\end{lstlisting}
+
+\subsection{管理端后端}
+
+\begin{lstlisting}[language=bash]
+cd admin/backend
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+# 设置环境变量（Linux 用 export）
+$env:ADMIN_PASSWORD = "YourStrongPassword"
+$env:VOCS_BASE_URL = "http://127.0.0.1:8001"
+uvicorn main:app --host 0.0.0.0 --port 8002 --reload
+\end{lstlisting}
+
+\subsection{管理端前端}
+
+\begin{lstlisting}[language=bash]
+cd admin/frontend
+npm install            # 或 npm ci（基于 package-lock.json）
+npm run dev            # 开发模式，监听 5173
+# 生产构建
+npm run build
+# 产物位于 admin/frontend/dist，使用 nginx 托管
+\end{lstlisting}
+
+\subsection{Nginx 反向代理示例}
+
+\begin{lstlisting}[language=bash]
+server {
+    listen 5050;
+    server_name _;
+
+    # 管理端前端静态资源
+    location / {
+        root /opt/waste-gas/admin/frontend/dist;
+        try_files $uri $uri/ /index.html;
+    }
+
+    # 管理端 API
+    location /api/ {
+        proxy_pass http://127.0.0.1:8002;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    # ML 服务 SSE（注意关闭缓冲）
+    location /vocs/ {
+        proxy_pass http://127.0.0.1:8001/;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_set_header Connection "";
+        proxy_http_version 1.1;
+        chunked_transfer_encoding on;
+    }
+}
+\end{lstlisting}
+
+% ========== 6 配置项说明 ==========
+\section{关键配置项说明}
+
+\begin{longtable}{L{4.8cm} L{3.5cm} L{5.5cm}}
+\toprule
+\textbf{环境变量} & \textbf{默认值} & \textbf{说明} \\
+\midrule
+\endhead
+\texttt{ADMIN\_JWT\_SECRET}           & waste-gas-admin-secret     & JWT 签名密钥，生产必须更换 \\
+\texttt{ADMIN\_USERNAME}              & admin                      & 管理员登录名 \\
+\texttt{ADMIN\_PASSWORD}              & admin123456                & 管理员登录密码，生产必须更换 \\
+\texttt{ADMIN\_TOKEN\_EXPIRE\_MINUTES}& 120                        & Token 有效期（分钟） \\
+\texttt{VOCS\_BASE\_URL}              & http://127.0.0.1:8001      & ML 服务地址，容器内用服务名 \\
+\texttt{VOCS\_REQUEST\_TIMEOUT}       & 4                          & HTTP 请求超时（秒） \\
+\texttt{ENSEMBLE\_BASE\_URL}          & http://127.0.0.1:8000      & 集成模型服务（可选） \\
+\texttt{ADMIN\_TOTAL\_EQUIPMENT}      & 150                        & 设备总数（展示用） \\
+\texttt{PG\_HOST} / \texttt{PG\_PORT} & 98.142.241.155 / 5432      & 默认指向开发库，生产必须覆盖 \\
+\texttt{PG\_DB / PG\_USER / PG\_PASSWORD} & aqimonitor / team / ...& 数据库凭据 \\
+\texttt{MODEL\_PATH}                  & models/vocs\_seq2seq\_v2\_best.pth & Torch 模型路径 \\
+\texttt{SCALER\_PATH}                 & models/vocs\_scalers\_v2.pkl       & 归一化器路径 \\
+\texttt{TZ}                           & Asia/Shanghai              & 时区，影响日志与告警时间戳 \\
+\bottomrule
+\end{longtable}
+
+% ========== 7 常见问题排查 ==========
+\section{常见问题排查}
+
+\subsection{前端打不开 / 白屏}
+
+\begin{warnbox}[现象]
+浏览器访问 \texttt{http://<IP>:5173} 或 \texttt{http://<IP>:5050} 空白，或控制台报
+\texttt{Failed to load resource: net::ERR\_CONNECTION\_REFUSED}。
+\end{warnbox}
+
+\textbf{排查步骤}：
+\begin{enumerate}[leftmargin=1.6em,itemsep=2pt]
+  \item 确认容器存活：\texttt{docker compose ps}，\texttt{STATUS} 列应为 \texttt{Up (healthy)}。
+  \item 确认端口监听：\texttt{ss -ltnp | grep -E '5173|5050|8002'}。
+  \item 确认防火墙放行：\texttt{ufw status} / \texttt{firewall-cmd -{}-list-ports}。
+  \item 检查 Nginx 配置 \texttt{root} 指向的 \texttt{dist} 目录是否已生成（\texttt{npm run build}）。
+  \item 前端 \texttt{vite.config.ts} 中代理目标是否与后端实际端口一致。
+\end{enumerate}
+
+\subsection{登录后 401 / 实时数据不刷新}
+
+\textbf{可能原因}：
+\begin{itemize}[leftmargin=1.4em,itemsep=2pt]
+  \item JWT 过期：检查 \texttt{ADMIN\_TOKEN\_EXPIRE\_MINUTES}，登录后重新获取 token。
+  \item SSE 被 Nginx 缓冲：确认 Nginx 已关闭 \texttt{proxy\_buffering}、\texttt{proxy\_cache}，且 \texttt{proxy\_read\_timeout} $\geq$ 3600s。
+  \item \texttt{vocs-server} 未启动或健康检查失败：\texttt{docker logs vocs-control-system}。
+  \item 浏览器控制台 \texttt{/api/events} 连接断开：检查反向代理是否支持 \texttt{chunked} 传输。
+\end{itemize}
+
+\subsection{Torch 启动报错 \texttt{CUDA out of memory} 或 \texttt{Illegal instruction}}
+
+\begin{dangerbox}[CPU 不支持 AVX2 时]
+某些旧服务器缺少 AVX2 指令集，PyTorch 2.7.0 默认二进制会在加载时触发
+\texttt{Illegal instruction (core dumped)}。解决：降级到 \texttt{torch==2.0.1+cpu}
+或改用 ONNX Runtime 部署。
+\end{dangerbox}
+
+\textbf{排查}：
+\begin{enumerate}[leftmargin=1.6em,itemsep=2pt]
+  \item \texttt{cat /proc/cpuinfo | grep -o 'avx2' | head -1} 验证 CPU 指令集。
+  \item \texttt{nvidia-smi} 查看显存占用；将 \texttt{torch.load} 切换 \texttt{map\_location="cpu"}。
+  \item 检查 \texttt{models/} 目录是否成功挂载到容器 \texttt{/app/models}。
+\end{enumerate}
+
+\subsection{PostgreSQL 连接失败}
+
+\textbf{典型报错}：\texttt{psycopg2.OperationalError: could not connect to server}
+
+\textbf{排查}：
+\begin{enumerate}[leftmargin=1.6em,itemsep=2pt]
+  \item 容器内用服务名 \texttt{postgres} 而非 \texttt{127.0.0.1}——共享 compose 网络后 \texttt{PG\_HOST=postgres}。
+  \item 外部访问需确认 \texttt{postgresql.conf} 的 \texttt{listen\_addresses='*'} 与 \texttt{pg\_hba.conf}。
+  \item 云库：白名单是否放行当前出口 IP。
+  \item 应用启动日志出现 \texttt{[DB] WARNING: init\_pool failed}——RAG 持久化功能将自动降级但不阻塞启动。
+\end{enumerate}
+
+\subsection{告警与持续监控面板"没数据"}
+
+\begin{itemize}[leftmargin=1.4em,itemsep=2pt]
+  \item 前端已内置 mock 演示数据（\texttt{stores/alerts.ts}、\texttt{stores/dashboard.ts}），
+        若连接完全断开也会回退显示；若 mock 也不出现，多为前端构建产物未更新。
+  \item 确认 \texttt{vocs\_server} 有数据接入：
+        \texttt{curl http://127.0.0.1:8001/alerts?limit=5}。
+  \item 管理端后端日志 \texttt{httpx.ConnectError}：检查 \texttt{VOCS\_BASE\_URL} 是否匹配实际网络。
+\end{itemize}
+
+\subsection{3D 场景卡顿 / WebGL 不可用}
+
+\begin{itemize}[leftmargin=1.4em,itemsep=2pt]
+  \item 浏览器需启用硬件加速；集成显卡建议窗口分辨率 $\leq$ 1920$\times$1080。
+  \item \texttt{about:gpu} (Chrome) 确认 WebGL2 处于 \texttt{Hardware accelerated}。
+  \item 远程桌面/RDP 下常见 WebGL fallback 到软件渲染，建议现场演示用本机浏览器。
+\end{itemize}
+
+\subsection{Docker 构建慢 / 拉取超时}
+
+\begin{lstlisting}[language=bash]
+# /etc/docker/daemon.json 配置国内镜像加速
+{
+  "registry-mirrors": [
+    "https://docker.mirrors.ustc.edu.cn",
+    "https://hub-mirror.c.163.com"
+  ]
+}
+sudo systemctl restart docker
+
+# pip 国内源
+pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+
+# npm 国内源
+npm config set registry https://registry.npmmirror.com
+\end{lstlisting}
+
+\subsection{SSE 连接 30 秒后被 Nginx 断开}
+
+Nginx 默认 \texttt{proxy\_read\_timeout} 为 60 秒，长连 SSE 会被动关闭后前端每 3 秒重连。
+修改如下：
+
+\begin{lstlisting}[language=bash]
+proxy_read_timeout 3600s;
+proxy_send_timeout 3600s;
+proxy_http_version 1.1;
+proxy_set_header Connection "";
+proxy_buffering off;
+\end{lstlisting}
+
+\subsection{Windows 开发环境 Python 包编译失败}
+
+\textbf{典型}：\texttt{psycopg2-binary} / \texttt{sentence-transformers} 编译 C 扩展时报缺少
+\texttt{Microsoft Visual C++ 14.0}。解决方案：
+\begin{itemize}[leftmargin=1.4em,itemsep=2pt]
+  \item 安装 \href{https://visualstudio.microsoft.com/visual-cpp-build-tools/}{\textbf{Visual Studio Build Tools}}，勾选 "Desktop development with C++"；
+  \item 或直接使用 Docker 部署，绕开原生编译。
+\end{itemize}
+
+% ========== 8 附录 ==========
+\section{附录}
+
+\subsection{端口一览}
+
+\begin{longtable}{L{2.5cm} L{3.5cm} L{8.0cm}}
+\toprule
+\textbf{端口} & \textbf{服务} & \textbf{用途} \\
+\midrule
+\endhead
+8001 & vocs-server           & ML 推理 REST + SSE \\
+8002 & admin-backend         & 管理端聚合 API + JWT \\
+8003 & client-backend        & 用户端 REST \\
+5173 & admin-frontend (dev)  & Vite 开发服务器 \\
+5050 & nginx                 & 反向代理 / 静态资源 \\
+5432 & postgres              & 时序数据库 \\
+6379 & redis                 & 缓存 \\
+\bottomrule
+\end{longtable}
+
+\subsection{健康检查命令速查}
+
+\begin{lstlisting}[language=bash]
+# ML 服务
+curl -s http://127.0.0.1:8001/status | python -m json.tool
+
+# 管理端后端
+curl -s http://127.0.0.1:8002/api/health
+
+# PostgreSQL
+docker exec vocs-postgres pg_isready -U team -d aqimonitor
+
+# 全量容器健康
+docker ps --format 'table {{.Names}}\t{{.Status}}'
+\end{lstlisting}
+
+\subsection{日志位置}
+
+\begin{itemize}[leftmargin=1.4em,itemsep=2pt]
+  \item Docker：\texttt{docker compose logs -f <service>}
+  \item 非容器：\texttt{backend/backend-stdout.log}、\texttt{backend/backend-stderr.log}
+  \item Nginx：\texttt{nginx-1.28.0/logs/access.log}、\texttt{error.log}
+\end{itemize}
+
+\vspace{1em}
+\begin{infobox}[技术支持]
+如排查未果，请联系项目组并提供：
+\begin{enumerate}[leftmargin=1.4em,itemsep=1pt]
+  \item \texttt{docker compose ps} 截图
+  \item 问题服务最近 200 行日志
+  \item 浏览器控制台 Network 面板截图（如为前端问题）
+  \item 操作系统、Docker、Python、Node 版本信息
+\end{enumerate}
+\end{infobox}
+
+\vspace{2em}
+\begin{center}
+\color{gray}\small --- 文档结束 ---\\[2pt]
+智洁园区项目组 \textperiodcentered{} 2026
+\end{center}
+
+\end{document}

@@ -1,24 +1,9 @@
-/**
- * 热力外壳 —— 把工艺单元的多指标浓度以"发光半透明罩"的形式贴在建筑上。
- *
- * 设计要点：
- *   1. 每个工艺单元用一个 mesh（box 或 cylinder）略大于建筑本体，
- *      材质是自定义 ShaderMaterial + AdditiveBlending，避免挡住原 mesh。
- *   2. 色彩：uRatio uniform 0~1.15 驱动 heatmapColor(cyan→yellow→orange→red)，
- *      再叠一层垂直方向的亮度梯度（底亮顶暗），呼应"热气从底部往上散"的感觉。
- *   3. uPulse 轻微脉动，critical 级 mesh 脉动幅度更大，作视觉高亮。
- *   4. uRatio 更新时用一阶低通插值到目标值，避免浓度跳变导致颜色闪烁。
- *
- * 对外 API：
- *   - new HeatShellSet(scene, EMITTER_DEFINITIONS)  创建并加入场景
- *   - updateFromConcentrations(concs)               传入 store 的最新浓度
- *   - tick(dt, elapsed)                              每帧调用，更新 uniform
- *   - dispose()
- */
 import * as THREE from "three";
 
 import type { EmitterConcentration } from "@/types/dashboard";
-import type { EmitterDefinition } from "./EmitterConfig";
+import type { EmitterDefinition, HeatHotspotConfig } from "./EmitterConfig";
+
+const MAX_SPOTS = 3;
 
 interface ShellEntry {
   id: string;
@@ -26,9 +11,10 @@ interface ShellEntry {
   material: THREE.ShaderMaterial;
   targetRatio: number;
   currentRatio: number;
-  /** 0 normal / 1 warning / 2 critical（shader 里拿来加脉动幅度） */
   targetLevel: number;
   currentLevel: number;
+  targetSpotStrengths: number[];
+  currentSpotStrengths: number[];
 }
 
 const VERTEX_SHADER = /* glsl */ `
@@ -42,26 +28,24 @@ const VERTEX_SHADER = /* glsl */ `
   }
 `;
 
-/**
- * 颜色映射：与右侧 HUD 图例色条同源（浅青→青绿→黄→橙→红）。
- * 和 FactoryScene 的 .heatmap-hud__scale-bar linear-gradient 断点保持一致。
- */
 const FRAGMENT_SHADER = /* glsl */ `
-  uniform float uRatio;
+  uniform float uBaseRatio;
   uniform float uPulse;
   uniform float uLevel;
-  uniform vec3  uHalfSize;
+  uniform vec3 uHalfSize;
+  uniform vec3 uSpotPos[3];
+  uniform float uSpotStrength[3];
+  uniform float uSpotRadius[3];
 
   varying vec3 vLocalPos;
   varying vec3 vNormal;
 
   vec3 heatmapColor(float t) {
-    // 与 .heatmap-hud__scale-bar 的色段一致，保证场景颜色和右侧图例读数能对应
-    vec3 c0 = vec3(0.36, 0.82, 0.95);  // 浅青  #5DD2F2  (低浓度)
-    vec3 c1 = vec3(0.40, 0.92, 0.70);  // 青绿
-    vec3 c2 = vec3(1.00, 0.82, 0.30);  // 琥珀黄
-    vec3 c3 = vec3(1.00, 0.50, 0.20);  // 橙
-    vec3 c4 = vec3(1.00, 0.22, 0.22);  // 红    (超标)
+    vec3 c0 = vec3(0.36, 0.82, 0.95);
+    vec3 c1 = vec3(0.40, 0.92, 0.70);
+    vec3 c2 = vec3(1.00, 0.82, 0.30);
+    vec3 c3 = vec3(1.00, 0.50, 0.20);
+    vec3 c4 = vec3(1.00, 0.22, 0.22);
 
     float x = clamp(t, 0.0, 1.15);
     if (x < 0.25) return mix(c0, c1, x / 0.25);
@@ -70,30 +54,53 @@ const FRAGMENT_SHADER = /* glsl */ `
     return mix(c3, c4, clamp((x - 0.85) / 0.30, 0.0, 1.0));
   }
 
+  float hotspotField(vec3 point) {
+    float field = 0.0;
+    for (int index = 0; index < 3; index += 1) {
+      float strength = uSpotStrength[index];
+      if (strength <= 0.0001) {
+        continue;
+      }
+
+      vec3 delta = point - uSpotPos[index];
+      delta.y *= 0.78;
+      float distanceSquared = dot(delta, delta);
+      float radius = max(uSpotRadius[index], 0.08);
+      float visibleStrength = 0.18 + strength * 0.92;
+      float core = exp(-distanceSquared / (radius * radius * 1.10));
+      float haloRadius = radius * 2.25;
+      float halo = exp(-distanceSquared / (haloRadius * haloRadius));
+      float bridgeRadius = radius * 3.30;
+      float bridge = exp(-distanceSquared / (bridgeRadius * bridgeRadius));
+      field += visibleStrength * (0.95 * core + 0.68 * halo + 0.34 * bridge);
+    }
+    return field;
+  }
+
   void main() {
-    // 局部 y 归一到 0 (底) ~ 1 (顶)
-    float yN = clamp((vLocalPos.y / uHalfSize.y + 1.0) * 0.5, 0.0, 1.0);
+    vec3 normalizedPos = vLocalPos / uHalfSize;
+    float yN = clamp((normalizedPos.y + 1.0) * 0.5, 0.0, 1.0);
+    float verticalLift = mix(0.92, 1.18, smoothstep(0.02, 0.94, yN));
+    float edgeGlow = pow(1.0 - clamp(abs(vNormal.z), 0.0, 1.0), 1.8) * 0.22;
 
-    // 垂直梯度：底部稍亮，往顶部柔和衰减（保持"厚度感"但不会过浓）
-    float verticalFalloff = mix(0.85, smoothstep(1.2, 0.1, yN), 0.55);
+    float field = hotspotField(normalizedPos);
+    float baseWash = uBaseRatio * (0.34 + 0.20 * verticalLift);
+    float blendedRatio = clamp(baseWash + field * (0.80 + 0.20 * verticalLift), 0.0, 1.15);
 
-    // 菲涅耳：边缘稍亮做出"笼罩感"。abs(vNormal.z) 近似视线方向
-    float edge = pow(1.0 - abs(vNormal.z), 2.4) * 0.22;
+    float pulseAmplitude = 0.03 + uLevel * 0.05;
+    float pulse = 1.0 - pulseAmplitude + pulseAmplitude * sin(uPulse);
 
-    // 脉动：normal 级基本不动，critical 级才有可见呼吸
-    float pulseAmp = 0.04 + uLevel * 0.05;
-    float pulse = 1.0 - pulseAmp + pulseAmp * sin(uPulse);
+    float baseCoverage = smoothstep(0.02, 0.24, baseWash) * 0.42;
+    float hotspotCoverage = smoothstep(0.04, 0.62, field) * 0.72;
+    float coverage = clamp(baseCoverage + hotspotCoverage, 0.0, 1.0);
+    float hotspotGlow = smoothstep(0.36, 1.05, field) * 0.24;
+    float alpha = (0.02 + 0.62 * coverage + hotspotGlow + edgeGlow) * pulse;
+    alpha *= mix(0.96, 1.08, smoothstep(0.08, 0.88, yN));
+    alpha = clamp(alpha, 0.0, 0.82);
 
-    vec3 col = heatmapColor(uRatio);
-
-    // 最终 alpha 压得很低 —— additive blending 下 alpha 是颜色叠加强度，
-    // 过大就会饱和成白。0.04~0.18 的区间让颜色"着色"而不"发光糊"
-    float intensityBase = mix(0.04, 0.18, clamp(uRatio, 0.0, 1.0));
-    float alpha = (intensityBase * verticalFalloff + edge * 0.12) * pulse;
-    alpha = clamp(alpha, 0.0, 0.22);
-
-    // 颜色本身稍微压暗 20%，避免 additive 把白色成分推得太亮
-    gl_FragColor = vec4(col * 0.8, alpha);
+    vec3 color = heatmapColor(blendedRatio);
+    float colorLift = 0.92 + 0.42 * clamp(blendedRatio, 0.0, 1.0) + coverage * 0.22;
+    gl_FragColor = vec4(color * colorLift, alpha);
   }
 `;
 
@@ -103,102 +110,156 @@ const levelToNumber = (level: string): number => {
   return 0;
 };
 
-export class HeatShellSet {
-  private readonly parent: THREE.Object3D;
-  private readonly shells: Map<string, ShellEntry> = new Map();
+const padHotspots = (hotspots: HeatHotspotConfig[]) => {
+  const positions: THREE.Vector3[] = [];
+  const radii: number[] = [];
 
-  constructor(parent: THREE.Object3D, defs: EmitterDefinition[]) {
-    this.parent = parent;
-    for (const def of defs) {
-      const entry = this.createShell(def);
-      this.shells.set(def.id, entry);
-      parent.add(entry.mesh);
+  for (let index = 0; index < MAX_SPOTS; index += 1) {
+    const hotspot = hotspots[index];
+    if (hotspot) {
+      positions.push(
+        new THREE.Vector3(
+          hotspot.position[0],
+          hotspot.position[1],
+          hotspot.position[2],
+        ),
+      );
+      radii.push(hotspot.spread * 1.18);
+    } else {
+      positions.push(new THREE.Vector3(0, 0, 0));
+      radii.push(0.55);
     }
   }
 
-  private createShell(def: EmitterDefinition): ShellEntry {
+  return { positions, radii };
+};
+
+export class HeatShellSet {
+  private readonly parent: THREE.Object3D;
+  private readonly shells = new Map<string, ShellEntry>();
+
+  constructor(parent: THREE.Object3D, definitions: EmitterDefinition[]) {
+    this.parent = parent;
+    for (const definition of definitions) {
+      const entry = this.createShell(definition);
+      this.shells.set(definition.id, entry);
+      this.parent.add(entry.mesh);
+    }
+  }
+
+  private createShell(definition: EmitterDefinition): ShellEntry {
     let geometry: THREE.BufferGeometry;
     let halfSize: THREE.Vector3;
 
-    if (def.shell.kind === "cylinder") {
-      const [radiusTop, height, radiusBottom] = def.shell.size;
-      // 用 open-ended 圆柱（openEnded=true）避免上下盖在相机某些角度挡视线
-      geometry = new THREE.CylinderGeometry(radiusTop, radiusBottom, height, 28, 1, true);
+    if (definition.shell.kind === "cylinder") {
+      const [radiusTop, height, radiusBottom] = definition.shell.size;
+      geometry = new THREE.CylinderGeometry(
+        radiusTop,
+        radiusBottom,
+        height,
+        40,
+        8,
+        true,
+      );
       halfSize = new THREE.Vector3(
         Math.max(radiusTop, radiusBottom),
         height / 2,
         Math.max(radiusTop, radiusBottom),
       );
     } else {
-      const [sx, sy, sz] = def.shell.size;
-      geometry = new THREE.BoxGeometry(sx, sy, sz, 3, 3, 3);
-      halfSize = new THREE.Vector3(sx / 2, sy / 2, sz / 2);
+      const [sizeX, sizeY, sizeZ] = definition.shell.size;
+      geometry = new THREE.BoxGeometry(sizeX, sizeY, sizeZ, 10, 8, 10);
+      halfSize = new THREE.Vector3(sizeX / 2, sizeY / 2, sizeZ / 2);
     }
 
+    const padded = padHotspots(definition.shell.hotspots);
     const material = new THREE.ShaderMaterial({
       uniforms: {
-        uRatio: { value: 0 },
+        uBaseRatio: { value: 0 },
         uPulse: { value: 0 },
         uLevel: { value: 0 },
         uHalfSize: { value: halfSize },
+        uSpotPos: { value: padded.positions },
+        uSpotStrength: { value: [0, 0, 0] },
+        uSpotRadius: { value: padded.radii },
       },
       vertexShader: VERTEX_SHADER,
       fragmentShader: FRAGMENT_SHADER,
       transparent: true,
       depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide,
+      depthTest: true,
+      blending: THREE.NormalBlending,
+      side: THREE.FrontSide,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -2,
+      toneMapped: false,
     });
 
     const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.set(def.shell.center[0], def.shell.center[1], def.shell.center[2]);
-    mesh.renderOrder = 5; // 在其他 mesh 之后渲染，保证 additive 叠加正确
-    mesh.userData.emitterId = def.id;
+    mesh.position.set(
+      definition.shell.center[0],
+      definition.shell.center[1],
+      definition.shell.center[2],
+    );
+    if (definition.shell.kind === "cylinder") {
+      mesh.scale.set(1.12, 1.03, 1.12);
+    } else {
+      mesh.scale.set(1.05, 1.06, 1.05);
+    }
+    mesh.renderOrder = 5;
+    mesh.userData.emitterId = definition.id;
     mesh.castShadow = false;
     mesh.receiveShadow = false;
 
     return {
-      id: def.id,
+      id: definition.id,
       mesh,
       material,
       targetRatio: 0,
       currentRatio: 0,
       targetLevel: 0,
       currentLevel: 0,
+      targetSpotStrengths: [0, 0, 0],
+      currentSpotStrengths: [0, 0, 0],
     };
   }
 
-  /**
-   * 用后端 / SSE 生成的 emitterConcentrations 刷新各外壳的目标 ratio。
-   * 实际 uniform 的更新在 tick() 里做一阶低通平滑，避免跳变。
-   */
-  updateFromConcentrations(concs: Record<string, EmitterConcentration>): void {
+  updateFromConcentrations(concentrations: Record<string, EmitterConcentration>): void {
     for (const [id, entry] of this.shells) {
-      const data = concs[id];
-      if (!data) {
+      const concentration = concentrations[id];
+      if (!concentration) {
         entry.targetRatio = 0;
         entry.targetLevel = 0;
+        entry.targetSpotStrengths = [0, 0, 0];
         continue;
       }
-      entry.targetRatio = data.maxRatio;
-      entry.targetLevel = levelToNumber(data.level);
+
+      entry.targetRatio = concentration.maxRatio;
+      entry.targetLevel = levelToNumber(concentration.level);
+      entry.targetSpotStrengths = Array.from({ length: MAX_SPOTS }, (_, index) =>
+        concentration.indicators[index]?.ratio ?? 0,
+      );
     }
   }
 
-  /**
-   * 每帧调用：smoothing + pulse 相位推进。
-   * - dt: 自上一帧秒数
-   * - elapsed: 场景 elapsed 秒（给 critical 脉动一个统一的时钟）
-   */
   tick(dt: number, elapsed: number): void {
-    // 一阶低通系数：k 越小越"粘"。0.08 / 16ms ≈ 5Hz 响应，视觉上顺滑但不迟钝
-    const smooth = 1 - Math.exp(-dt / 0.45);
+    const smooth = 1 - Math.exp(-dt / 0.42);
+
     for (const entry of this.shells.values()) {
       entry.currentRatio += (entry.targetRatio - entry.currentRatio) * smooth;
       entry.currentLevel += (entry.targetLevel - entry.currentLevel) * smooth;
-      entry.material.uniforms.uRatio.value = entry.currentRatio;
+
+      for (let index = 0; index < MAX_SPOTS; index += 1) {
+        const target = entry.targetSpotStrengths[index] ?? 0;
+        entry.currentSpotStrengths[index] +=
+          (target - entry.currentSpotStrengths[index]) * smooth;
+      }
+
+      entry.material.uniforms.uBaseRatio.value = entry.currentRatio;
       entry.material.uniforms.uLevel.value = entry.currentLevel;
       entry.material.uniforms.uPulse.value = elapsed * 2.2 + entry.mesh.id * 0.37;
+      entry.material.uniforms.uSpotStrength.value = [...entry.currentSpotStrengths];
     }
   }
 
