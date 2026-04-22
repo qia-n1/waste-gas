@@ -220,6 +220,8 @@ class VOCsSystemManager:
     def __init__(self):
         self.model = None
         self.sensor_data_buffer: List[SensorData] = []
+        self.replay_source: List[SensorData] = []
+        self.replay_index = 0
         self.predictions: List[PredictionResult] = []
         self.alerts: List[Alert] = []
         self.latest_prediction: Optional[PredictionResult] = None
@@ -232,6 +234,8 @@ class VOCsSystemManager:
         self.CSV_FILE_PATH = os.getenv("CSV_PATH", "vocs_realtime_data/vocs_realtime_data.csv")
         self.SCALER_FILE_PATH = os.getenv("SCALER_PATH", "models/vocs_scalers_v2.pkl")
         self.MODEL_PATH = os.getenv("MODEL_PATH", "models/vocs_seq2seq_v2_best.pth")
+        self.REPLAY_ENABLED = os.getenv("AUTO_REPLAY_ENABLED", "true").lower() not in {"0", "false", "no"}
+        self.REPLAY_INTERVAL_SECONDS = max(1.0, float(os.getenv("REPLAY_INTERVAL_SECONDS", "5")))
         self.total_data_received = 0
         self.total_predictions = 0
         self.total_alerts = 0
@@ -256,6 +260,16 @@ class VOCsSystemManager:
         local_tz = datetime.now().astimezone().tzinfo
         logger.info(f"System initialized with {len(self.dataset_fields)} fields")
         logger.info(f"System timezone: {local_tz}, Current time: {get_local_timestamp()}")
+
+    def _build_sensor_data(self, row_dict: Dict) -> Optional[SensorData]:
+        try:
+            payload = dict(row_dict)
+            if isinstance(payload.get('timestamp'), pd.Timestamp):
+                payload['timestamp'] = payload['timestamp'].isoformat()
+            return SensorData(**payload)
+        except Exception as e:
+            logger.warning(f"Skipping invalid row: {e}")
+            return None
 
     def _load_scalers(self):
         try:
@@ -287,16 +301,15 @@ class VOCsSystemManager:
                 return 0
 
             logger.info(f"Loaded {data_count} records from CSV")
-            latest_data = df.tail(self.BUFFER_SIZE)
-            for _, row in latest_data.iterrows():
-                try:
-                    row_dict = row.to_dict()
-                    if isinstance(row_dict.get('timestamp'), pd.Timestamp):
-                        row_dict['timestamp'] = row_dict['timestamp'].isoformat()
-                    data = SensorData(**row_dict)
-                    self.sensor_data_buffer.append(data)
-                except Exception as e:
-                    logger.warning(f"Skipping invalid row: {e}")
+            all_rows: List[SensorData] = []
+            for _, row in df.iterrows():
+                data = self._build_sensor_data(row.to_dict())
+                if data:
+                    all_rows.append(data)
+
+            self.replay_source = all_rows[-self.BUFFER_SIZE:] if len(all_rows) > self.BUFFER_SIZE else all_rows
+            self.replay_index = 0
+            self.sensor_data_buffer = list(self.replay_source)
 
             self.total_data_received = data_count
             logger.info(f"Buffer loaded with {len(self.sensor_data_buffer)} records")
@@ -395,7 +408,10 @@ class VOCsSystemManager:
             return False
 
     def add_sensor_data(self, data: SensorData):
-        if not self.save_data_to_csv(data):
+        return self.ingest_sensor_data(data, persist=True)
+
+    def ingest_sensor_data(self, data: SensorData, persist: bool = False):
+        if persist and not self.save_data_to_csv(data):
             logger.error("Failed to save data to CSV")
             return None
 
@@ -405,48 +421,49 @@ class VOCsSystemManager:
         if len(self.sensor_data_buffer) > self.BUFFER_SIZE:
             self.sensor_data_buffer.pop(0)
 
-        csv_count = self.get_csv_data_count()
-        logger.info(f"Data received - VOCs: {data.rto_out_conc:.2f}, CSV: {csv_count}, Buffer: {len(self.sensor_data_buffer)}/{self.BUFFER_SIZE}")
+        point_count = len(self.sensor_data_buffer)
+        csv_count = self.get_csv_data_count() if persist else len(self.replay_source)
+        logger.info(
+            f"Data received - VOCs: {data.rto_out_conc:.2f}, CSV: {csv_count}, "
+            f"Buffer: {point_count}/{self.BUFFER_SIZE}, Persisted: {persist}"
+        )
 
-        if self._should_predict():
+        if self._should_predict(point_count):
             return self._trigger_prediction()
         return None
 
-    def _should_predict(self) -> bool:
-        csv_count = self.get_csv_data_count()
-        if csv_count >= self.MIN_DATA_FOR_PREDICTION:
-            logger.info(f"Prediction triggered - {csv_count} records")
+    def _should_predict(self, point_count: Optional[int] = None) -> bool:
+        available_points = point_count if point_count is not None else len(self.sensor_data_buffer)
+        if available_points >= self.MIN_DATA_FOR_PREDICTION:
+            logger.info(f"Prediction triggered - {available_points} records in buffer")
             return True
         return False
 
     def _trigger_prediction(self) -> Optional[PredictionResult]:
         try:
-            csv_count = self.get_csv_data_count()
-            if csv_count < self.MIN_DATA_FOR_PREDICTION:
-                logger.warning(f"Insufficient data: {csv_count} < {self.MIN_DATA_FOR_PREDICTION}")
+            available_data = len(self.sensor_data_buffer)
+            if available_data < self.MIN_DATA_FOR_PREDICTION:
+                logger.warning(f"Insufficient data: {available_data} < {self.MIN_DATA_FOR_PREDICTION}")
                 return None
-
-            latest_df = self.read_latest_csv_data(self.BUFFER_SIZE)
-            available_data = len(latest_df)
-
-            self.sensor_data_buffer.clear()
-            for _, row in latest_df.iterrows():
-                try:
-                    data = SensorData(**row.to_dict())
-                    self.sensor_data_buffer.append(data)
-                except Exception as e:
-                    logger.warning(f"Skipping invalid row: {e}")
 
             logger.info(f"Loaded {available_data} records for prediction")
 
-            if csv_count < self.BUFFER_SIZE:
+            if available_data < self.BUFFER_SIZE:
                 return self._warmup_prediction(available_data)
-            else:
-                return self._ai_prediction()
+            return self._ai_prediction()
 
         except Exception as e:
             logger.error(f"Prediction failed: {e}")
             return None
+
+    def build_replay_sensor_data(self) -> Optional[SensorData]:
+        if not self.replay_source:
+            return None
+        source = self.replay_source[self.replay_index % len(self.replay_source)]
+        self.replay_index = (self.replay_index + 1) % len(self.replay_source)
+        payload = source.model_dump()
+        payload["timestamp"] = get_local_timestamp()
+        return SensorData(**payload)
 
     def _warmup_prediction(self, available_data_size: int) -> Optional[PredictionResult]:
         try:
@@ -502,10 +519,11 @@ class VOCsSystemManager:
 
     def _parse_timestamp(self, timestamp_str: str) -> pd.Timestamp:
         try:
-            if 'T' in timestamp_str:
-                return pd.to_datetime(timestamp_str)
-            else:
-                return pd.to_datetime(timestamp_str)
+            timestamp = pd.to_datetime(timestamp_str)
+            if getattr(timestamp, "tzinfo", None) is not None:
+                local_tz = datetime.now().astimezone().tzinfo
+                timestamp = timestamp.tz_convert(local_tz).tz_localize(None)
+            return timestamp
         except Exception as e:
             logger.warning(f"Timestamp parsing failed: {timestamp_str}, {e}")
             return pd.NaT
@@ -642,7 +660,7 @@ class VOCsSystemManager:
                 confidence=0.85,
                 alert_triggered=False,
                 alert_message="AI model prediction",
-                prediction_type=""
+                prediction_type="ImprovedSeq2Seq"
             )
 
             self._check_alerts(result)
@@ -711,6 +729,8 @@ class VOCsSystemManager:
             "csv_total_records": csv_count,
             "memory_buffer_size": len(self.sensor_data_buffer),
             "memory_buffer_status": f"{len(self.sensor_data_buffer)}/{self.BUFFER_SIZE}",
+            "replay_enabled": self.REPLAY_ENABLED,
+            "replay_interval_seconds": self.REPLAY_INTERVAL_SECONDS,
             "system_phase": self._get_system_phase(),
             "storage_type": "CSV",
             "model_architecture": "ImprovedSeq2Seq",
@@ -760,10 +780,42 @@ class SSEManager:
 
 
 sse_manager = SSEManager()
+replay_task: Optional[asyncio.Task] = None
+
+
+async def replay_sensor_stream():
+    logger.info(
+        f"CSV replay loop started - interval={system_manager.REPLAY_INTERVAL_SECONDS:.1f}s, "
+        f"source_rows={len(system_manager.replay_source)}"
+    )
+    try:
+        while True:
+            replay_data = system_manager.build_replay_sensor_data()
+            if replay_data is None:
+                await asyncio.sleep(system_manager.REPLAY_INTERVAL_SECONDS)
+                continue
+
+            prediction_result = system_manager.ingest_sensor_data(replay_data, persist=False)
+            await sse_manager.broadcast({
+                "type": "sensor_data",
+                "timestamp": get_local_timestamp(),
+                "data": replay_data.model_dump()
+            })
+            if prediction_result:
+                await sse_manager.broadcast({
+                    "type": "prediction",
+                    "timestamp": get_local_timestamp(),
+                    "data": prediction_result.model_dump()
+                })
+            await asyncio.sleep(system_manager.REPLAY_INTERVAL_SECONDS)
+    except asyncio.CancelledError:
+        logger.info("CSV replay loop stopped")
+        raise
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global replay_task
     logger.info("="*60)
     logger.info("VOCs Control System starting...")
     logger.info("="*60)
@@ -793,8 +845,19 @@ async def lifespan(app: FastAPI):
     logger.info("="*60)
     logger.info(f"System ready - {len(system_manager.dataset_fields)} fields, {csv_data_count} records")
 
+    if system_manager.REPLAY_ENABLED and system_manager.replay_source:
+        replay_task = asyncio.create_task(replay_sensor_stream())
+
 
     yield
+
+    if replay_task:
+        replay_task.cancel()
+        try:
+            await replay_task
+        except asyncio.CancelledError:
+            pass
+        replay_task = None
 
     logger.info("System shutting down...")
 

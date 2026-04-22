@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import httpx
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from config import settings
 from routers.auth import get_current_user
@@ -9,6 +9,7 @@ from services.vocs_proxy import (
     call_ensemble_predict,
     get_anomaly_heatmap,
     get_dashboard_overview,
+    get_emitter_history,
     get_equipment_status,
 )
 
@@ -33,6 +34,16 @@ async def equipment_status() -> dict:
 @router.get("/anomaly-heatmap")
 async def anomaly_heatmap(days: int = 7) -> dict:
     return await get_anomaly_heatmap(days=days)
+
+
+@router.get("/emitter-history/{emitter_id}")
+async def emitter_history(emitter_id: str, limit: int = 48) -> dict:
+    """Return recent history points for a single emitter, used by the
+    FactoryScene popup that opens when a building label is clicked."""
+    result = await get_emitter_history(emitter_id, limit=limit)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Unknown emitter: {emitter_id}")
+    return result
 
 
 @router.post("/predict")

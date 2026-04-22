@@ -49,7 +49,6 @@ const metrics = reactive({
 const loading = ref(false);
 const users = ref<UserListItem[]>([]);
 const roles = ref<UserRoleOption[]>([]);
-const selectedRows = ref<UserListItem[]>([]);
 const detailVisible = ref(false);
 const formVisible = ref(false);
 const isEditing = ref(false);

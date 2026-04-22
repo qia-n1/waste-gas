@@ -3,6 +3,7 @@ import { createRouter, createWebHistory } from "vue-router";
 import AdminDashboard from "@/views/AdminDashboard.vue";
 import LoginView from "@/views/Login.vue";
 import UserManagementView from "@/views/UserManagement.vue";
+import WorkOrderCenterView from "@/views/WorkOrderCenter.vue";
 
 const router = createRouter({
   history: createWebHistory(),
@@ -10,6 +11,7 @@ const router = createRouter({
     { path: "/login", name: "login", component: LoginView },
     { path: "/", name: "dashboard", component: AdminDashboard },
     { path: "/users", name: "users", component: UserManagementView },
+    { path: "/work-orders", name: "work-orders", component: WorkOrderCenterView },
   ],
 });
 

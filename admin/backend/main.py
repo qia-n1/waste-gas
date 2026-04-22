@@ -11,6 +11,7 @@ from routers.auth import router as auth_router
 from routers.dashboard import router as dashboard_router
 from routers.events import router as events_router
 from routers.users import router as users_router
+from routers.workorder import router as workorder_router
 from services import db
 from services.device_watchdog import watchdog
 
@@ -48,6 +49,7 @@ app.include_router(dashboard_router)
 app.include_router(alerts_router)
 app.include_router(users_router)
 app.include_router(events_router)
+app.include_router(workorder_router)
 
 
 @app.get("/api/health")

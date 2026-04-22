@@ -2,7 +2,7 @@
 
 ## 项目概述
 
-智洁园区 - 废气综合管理平台 管理端（admin），独立于同事的用户端（`frontend/` + `backend/`），在 `admin/` 目录下搭建独立前后端。
+气盾卫士 - 废气综合管理平台 管理端（admin），独立于同事的用户端（`frontend/` + `backend/`），在 `admin/` 目录下搭建独立前后端。
 
 ---
 
@@ -37,7 +37,7 @@
 
 ### 页眉 `HeaderBar.vue`
 - 左侧 Logo SVG + "回队" 标签
-- 居中标题 "智洁园区 - 废气综合管理平台"
+- 居中标题 "气盾卫士 - 废气综合管理平台"
 - 右侧实时指标：时间、在线设备、告警次数、退出按钮
 - `border-radius: 14px`
 
@@ -243,3 +243,105 @@ admin 前端 ──→ admin 后端 (8003)
 
 ### 启动脚本
 - 创建 `admin/start_admin.bat` 一键启动全部 4 个服务
+
+---
+
+## Phase 8：RAG 处置方案接入（基础）
+
+### 背景
+队友在 `admin/backend/rag/` 下提交了基于 BGE-large-zh 嵌入 + DeepSeek LLM 的 SOP 检索增强生成模块，但未接入告警诊断流程。本阶段把 RAG 卡片挂到 `/api/alerts/{id}/diagnosis` 响应上。
+
+### 后端改造
+- **`admin/backend/rag/rag_service.py`**
+  - 修正模型路径 bug：`../../models/bge-large-zh` → `models/bge-large-zh`（相对项目根）
+  - 删掉顶层多余的 `SentenceTransformer` 加载，交给 `SimpleVectorDB` 统一管理
+- **`admin/backend/services/vocs_proxy.py`**
+  - 采用 lazy-import + 失败降级：`try: from rag.rag_service import ...` 失败时置 `RAG_AVAILABLE = False`，不阻塞服务启动
+  - 日志统一 ASCII 前缀（`[RAG] module loaded` / `[RAG] module unavailable`），避免 Windows GBK 控制台 `UnicodeEncodeError`
+  - 新增 `_invoke_rag_diagnosis(vocs, shap_reason, shap_score)`：构造 RAG 入参 + `asyncio.to_thread` 包装同步调用，避免阻塞事件循环
+  - `get_alert_diagnosis()` 在构造 attribution 后追加 RAG 卡片字段
+
+### 前端改造
+- **`admin/frontend/src/types/dashboard.ts`**
+  - 新增 `RagCard` 接口（title / suggestionShort / sopSteps / safetyRedline / standard / level / reason / version / generatedAt / fromCache）
+  - `DiagnosisResponse` 扩展 `ragCard?: RagCard | null`
+- **`admin/frontend/src/components/dashboard/DecisionSupport.vue`**
+  - 新增 `ragCard` prop；标题 tag + standard + suggestion_short + SOP 有序列表 + 安全红线横幅
+  - CSS 按 level 切换 `--accent-amber` / `--accent-red` / `--accent-cyan`
+- **`admin/frontend/src/views/AdminDashboard.vue`**
+  - 新增 `decisionRagCard` computed，注入 `<DecisionSupport :rag-card="decisionRagCard">`
+
+### 功能测试
+- RAG 模块可用 / 不可用两条分支均通过（fallback 不崩溃）
+- SOP 步骤、safety_redline、standard 字段在 UI 正常渲染
+- Windows 控制台无乱码
+
+---
+
+## Phase 9：RAG 方案落库（管理端持久化 + 一线端共享）
+
+### 架构决策
+- 告警表 `wg_alerts` + 方案表 `wg_alert_rag_plans` 均走共享云库（TimescaleDB @ `98.142.241.155:5432/aqimonitor`）
+- **管理端**：运行 RAG → 生成方案 → 写入 `wg_alert_rag_plans`（缓存优先：同告警已有方案直接返回）
+- **一线端**：只读 `wg_alert_rag_plans`（本期不动），自己连 AI API 做问答；**不再部署 RAG**
+- 多版本策略：同 `alert_id` 可多次重新生成，旧版 `is_current=false`，`version` 单调递增
+
+### 数据库迁移
+- **新建** `admin/backend/migrations/001_wg_alert_rag_plans.sql`（已应用到云库）
+  - 19 字段表：`id / alert_id FK→wg_alerts(ON DELETE CASCADE) / version / title / suggestion_short / sop_steps JSONB / safety_redline / standard / level / reason / top_feature / top_feature_label / shap_score / current_vocs / model_name / confidence / generated_by / generated_at / is_current`
+  - 唯一键 `(alert_id, version)`；两个索引：当前版本部分索引 + 按生成时间倒序索引
+
+### 后端新增模块
+- **`admin/backend/config.py`**：新增 7 个 `PG_*` 配置字段（host/port/db/user/password/pool_min/pool_max/connect_timeout）
+- **`admin/backend/services/db.py`**（新文件）
+  - `ThreadedConnectionPool` + `RealDictCursor`
+  - `init_pool() / close_pool() / is_ready() / health_check()`
+  - `@contextmanager cursor(dict_rows=False)` 自动 commit/rollback/putconn
+- **`admin/backend/services/rag_plans.py`**（新文件）
+  - `PLAN_COLUMNS` 定义 19 列顺序
+  - `get_current_plan(alert_id)` / `list_plans(alert_id, limit)`
+  - `upsert_plan(alert_id, rag_card, context, generated_by)`：先算 `MAX(version)+1`，旧版置 `is_current=FALSE`，插入新行 `RETURNING *`
+  - `delete_plans_for_alert(alert_id)`、`parse_alert_id(str) -> int | None`（非数字 ID 如 `WATCHDOG-xxx` 返回 None）
+- **`admin/backend/main.py`**：lifespan 中调用 `db.init_pool()` + `db.health_check()`；失败不阻塞启动；关闭时 `db.close_pool()`
+- **`admin/backend/requirements.txt`**：新增 `psycopg2-binary==2.9.10`
+
+### `vocs_proxy.get_alert_diagnosis()` 缓存优先重构
+1. 构建 overview + contributors（不变）
+2. `parse_alert_id()` → `int | None`
+3. 若 int：`get_current_plan(aid)` 命中直接返回 `fromCache=True`
+4. 未命中 + `RAG_AVAILABLE` + attribution 齐全：`asyncio.to_thread(_invoke_rag_diagnosis, ...)` → `upsert_plan(...)` → 返回 `fromCache=False`
+5. 新增 `_plan_row_to_card(plan)` / `_raw_to_card(raw)` 两个 mapper
+6. 本地 fallback 告警（`WATCHDOG-xxx` / `LOCAL-FALLBACK-xxx`）跳过落库，直接返回实时 RAG 结果
+
+### 集成测试（真实云库）
+5 项全部通过：
+1. 连接池初始化 + `health_check()` OK
+2. CRUD round-trip：`upsert_plan` → `get_current_plan` → version 自增 → `list_plans` 倒序
+3. `parse_alert_id` 边界：数字 / `WATCHDOG-123` / `LOCAL-FALLBACK-xxx` / 空串
+4. 诊断接口端到端：首调 `version=1 fromCache=False`，二调 `version=1 fromCache=True`，`WATCHDOG-xxx` 永远 `fromCache=False`
+5. 连接池关闭无残留连接
+- 测试后用 `delete_plans_for_alert(88)` 清理痕迹
+
+### 前端兼容
+- `RagCard.version / generatedAt / fromCache` 字段已在 Phase 8 声明，UI 无需改动即可显示缓存标记
+
+---
+
+## Phase 10：园区工艺场景 标签精简
+
+### 需求
+3D 工厂可视化底图上同时存在两类浮层标签：
+- **厂房名**（喷涂生产厂房 / 转轮吸附厂房 / RTO 主处理厂房 / 公辅燃烧区 / 排口烟囱区 / 监测附属区）— 对应真实工艺单元，保留
+- **通用点位标签**（监测点位 / 关键设备 / 1号排口）— 来自 mock 的 `factoryNodes`，与实际工艺单元重复且语义模糊，按需求移除
+
+### 改造 `admin/frontend/src/components/dashboard/FactoryScene.vue`
+- 删除 `labelPositions` computed（映射 `props.nodes` 到屏幕坐标）
+- 删除模板中 `<div v-for="node in labelPositions" class="node-tag">` 整块
+- 删除未再引用的 `.node-tag` / `.node-tag--active` / `.node-pin` CSS
+- 从 `vue` 导入去掉不再使用的 `computed`
+- **保留** `buildingLabels` / `projectedBuildingLabels` / `.building-tag*`（厂房名继续显示）
+- **保留** `hoveredNodeId` + 3D marker 高亮逻辑（`markerMeshes` / `pulseMeshes` 仍响应射线拾取，颜色区分正常/预警/告警）
+
+### 效果
+- 3D 场景下方不再悬浮"监测点位 / 关键设备 / 1号排口"三条浅色文字
+- 状态仍由 3D 球形 marker 的颜色 + 脉冲光圈传达，语义更贴合工艺图

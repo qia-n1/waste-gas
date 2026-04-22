@@ -18,7 +18,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # 复制 requirements.txt 并安装 Python 依赖
 COPY requirements.txt .
 RUN pip install --upgrade pip && \
-    pip install -r requirements.txt
+    pip install --index-url https://download.pytorch.org/whl/cpu torch==2.7.0 && \
+    grep -v '^torch==' requirements.txt > /tmp/requirements-no-torch.txt && \
+    pip install -r /tmp/requirements-no-torch.txt
 
 # 复制应用代码
 COPY vocs_server.py .

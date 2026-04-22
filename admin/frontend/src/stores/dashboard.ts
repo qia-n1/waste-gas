@@ -5,6 +5,7 @@ import client from "@/api/client";
 import type {
   Attribution,
   DashboardOverview,
+  EmitterConcentrations,
   EquipmentStatusResponse,
   FactoryNode,
   HeatmapResponse,
@@ -12,8 +13,13 @@ import type {
   PredictionPayload,
   SensorPayload,
   TopContributorSeries,
+  WindField,
 } from "@/types/dashboard";
 import { highlightedSensorFields, sensorMeta } from "@/utils/sensorMeta";
+import {
+  buildEmitterConcentrations,
+  buildWindField,
+} from "@/components/dashboard/scene/EmitterConfig";
 
 const createOverview = (): DashboardOverview => ({
   timestamp: "",
@@ -45,10 +51,12 @@ const createOverview = (): DashboardOverview => ({
   keyParameters: [],
   decision: {
     summary: "正在等待 VOCs 监测数据。",
-    suggestions: ["请先启动共享 VOCs 服务，或使用本地 CSV 回放数据。"],
+    suggestions: ["请先启动 VOCs 服务，或检查模型端实时数据回放。"],
   },
   continuousAlerts: [],
   factoryNodes: [],
+  emitterConcentrations: {},
+  windField: { direction: [-1, 0.35, 0.2], speed: 0.5 },
 });
 
 const createEquipment = (): EquipmentStatusResponse => ({
@@ -131,6 +139,8 @@ export const useDashboardStore = defineStore("dashboard", () => {
   const heatmap = ref<HeatmapResponse>(createHeatmap());
   const attribution = ref<Attribution | null>(null);
   const topContributorSeries = ref<TopContributorSeries[]>([]);
+  const emitterConcentrations = ref<EmitterConcentrations>({});
+  const windField = ref<WindField>({ direction: [-1, 0.35, 0.2], speed: 0.5 });
   const isExceedWarning = ref(false);
   const loading = ref(false);
   const connected = ref(false);
@@ -145,11 +155,17 @@ export const useDashboardStore = defineStore("dashboard", () => {
         client.get<EquipmentStatusResponse>("/dashboard/equipment-status"),
         client.get<HeatmapResponse>("/dashboard/anomaly-heatmap"),
       ]);
+
       overview.value = overviewResponse.data;
       equipmentStatus.value = equipmentResponse.data;
       heatmap.value = heatmapResponse.data;
       attribution.value = overviewResponse.data.attribution ?? null;
       topContributorSeries.value = overviewResponse.data.topContributorSeries ?? [];
+      emitterConcentrations.value = overviewResponse.data.emitterConcentrations ?? {};
+      overview.value.continuousAlerts = overviewResponse.data.continuousAlerts ?? [];
+      if (overviewResponse.data.windField) {
+        windField.value = overviewResponse.data.windField;
+      }
       isExceedWarning.value = overview.value.metrics.alertLevel !== "normal";
     } finally {
       loading.value = false;
@@ -176,6 +192,10 @@ export const useDashboardStore = defineStore("dashboard", () => {
       payload.combustion_temp,
       overview.value.metrics.peakForecast,
     );
+    emitterConcentrations.value = buildEmitterConcentrations(payload);
+    windField.value = buildWindField(payload);
+    overview.value.emitterConcentrations = emitterConcentrations.value;
+    overview.value.windField = windField.value;
   };
 
   const updateFromPrediction = (payload: PredictionPayload, latestSensor?: SensorPayload) => {
@@ -185,17 +205,15 @@ export const useDashboardStore = defineStore("dashboard", () => {
       Math.max(...(payload.predicted_values || [0])),
     );
     overview.value.metrics.confidence = roundNumber(payload.confidence * 100, 0);
-    overview.value.metrics.predictionType = payload.prediction_type || "SSE";
+    overview.value.metrics.predictionType = payload.prediction_type || "ImprovedSeq2Seq";
     overview.value.metrics.alertLevel = getStatusByValue(
       Math.max(overview.value.metrics.currentVocs, overview.value.metrics.peakForecast),
     );
     overview.value.trend.confidence = payload.confidence;
-    overview.value.trend.forecastSeries = (payload.predicted_values || []).map(
-      (value, index) => ({
-        timestamp: new Date(start.getTime() + (index + 1) * 15 * 60 * 1000).toISOString(),
-        value: roundNumber(value),
-      }),
-    );
+    overview.value.trend.forecastSeries = (payload.predicted_values || []).map((value, index) => ({
+      timestamp: new Date(start.getTime() + (index + 1) * 15 * 60 * 1000).toISOString(),
+      value: roundNumber(value),
+    }));
 
     if (latestSensor) {
       overview.value.decision.summary = buildDecisionSummary(
@@ -236,6 +254,8 @@ export const useDashboardStore = defineStore("dashboard", () => {
     heatmap,
     attribution,
     topContributorSeries,
+    emitterConcentrations,
+    windField,
     isExceedWarning,
     loading,
     connected,

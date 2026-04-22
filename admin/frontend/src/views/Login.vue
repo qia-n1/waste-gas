@@ -29,7 +29,7 @@ const submit = async () => {
   <div class="login-page">
     <section class="login-hero">
       <p class="hero-tag">VOCs Forecasting Dashboard</p>
-      <h1>废气综合管理端</h1>
+      <h1>气盾卫士-多源化工废气智能治理系统</h1>
       <p class="hero-desc">
         面向园区管理者的监测、预测、告警与决策支持平台。当前版本优先打通实时概览与大屏监控链路。
       </p>

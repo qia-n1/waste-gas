@@ -113,7 +113,8 @@ const handleAcknowledge = async (alertId?: string) => {
 };
 
 const handleExport = () => {
-  ElMessage.success("初版中先提供交互占位，报告导出功能将在下一版补齐。");
+  // DecisionSupport 已经在本地把 HTML 报告下载下来了，这里只负责反馈
+  ElMessage.success("报告已生成并下载");
 };
 
 const handleLogout = async () => {
@@ -159,6 +160,7 @@ onBeforeUnmount(() => {
         :current-vocs="dashboardStore.overview.metrics.currentVocs"
         :system-phase="dashboardStore.overview.metrics.systemPhase"
         :is-exceed-warning="dashboardStore.isExceedWarning"
+        :emitter-concentrations="dashboardStore.emitterConcentrations"
       />
     </template>
 

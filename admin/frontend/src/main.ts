@@ -2,7 +2,7 @@ import { createApp } from "vue";
 import { createPinia } from "pinia";
 import ElementPlus from "element-plus";
 import { use } from "echarts/core";
-import { HeatmapChart, LineChart, PieChart } from "echarts/charts";
+import { BarChart, HeatmapChart, LineChart, PieChart } from "echarts/charts";
 import {
   GridComponent,
   LegendComponent,
@@ -20,6 +20,7 @@ import "./style.css";
 
 use([
   CanvasRenderer,
+  BarChart,
   HeatmapChart,
   LineChart,
   PieChart,
