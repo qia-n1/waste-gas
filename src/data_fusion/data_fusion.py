@@ -7,6 +7,8 @@ from typing import List, Dict, Union, Optional
 import warnings
 warnings.filterwarnings('ignore')
 
+
+# 系统公认的26个标准字段名
 STANDARD_FIELDS = [
     'timestamp', 'ambient_temp', 'ambient_humidity', 'ambient_pressure',
     'coating_flow', 'coating_conc', 'coating_temp', 'coating_pressure',
@@ -30,6 +32,7 @@ FIELD_DTYPES = {
     'rto_out_conc': float, 'rto_out_temp': float
 }
 
+# 系统公认的26个标准字段名的取值范围
 FIELD_RANGES = {
     'ambient_temp': (-10, 50),
     'ambient_humidity': (10, 100),

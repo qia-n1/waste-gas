@@ -149,7 +149,22 @@ export interface AlertsResponse {
 
 export interface DiagnosisContributor {
   label: string;
+  group?: string;
   weight: number;
+  contribution?: number;
+}
+
+export interface RagCard {
+  title: string;
+  suggestionShort: string;
+  sopSteps: string[];
+  safetyRedline: string;
+  standard: string;
+  level: string;
+  reason?: string;
+  version?: number | null;
+  generatedAt?: string | null;
+  fromCache?: boolean;
 }
 
 export interface DiagnosisResponse {
@@ -157,6 +172,11 @@ export interface DiagnosisResponse {
   summary: string;
   recommendations: string[];
   contributors: DiagnosisContributor[];
+  groupContributions?: GroupContribution[];
+  baseline?: number | null;
+  target?: number | null;
+  totalIncrement?: number | null;
+  ragCard?: RagCard | null;
 }
 
 export interface SensorPayload {
