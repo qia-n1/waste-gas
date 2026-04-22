@@ -7,7 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_current_username
 from app.db.session import get_db
-from app.models.entities import Alert, AlertRecord, DisposalRecord
+import json
+from app.models.entities import Alert, AlertRecord, DisposalRecord, RagPlan
 
 router = APIRouter(prefix='/alerts', tags=['alerts'])
 
@@ -71,18 +72,39 @@ async def get_alert_detail(alert_id: int, db: AsyncSession = Depends(get_db)) ->
         'sop': ['关闭异常支路', '检查风机电流与转速', '采样复测并记录处置结果'],
     }
 
-    ai_plan = {
-        'title': '现场处置方案（管理端下发）',
-        'summary': '按“先控制风险—再定位原因—复测确认—留痕闭环”的顺序执行，必要时升级班长/仪控/工艺联动。',
-        'steps': [
-            '确认告警点位、阈值与近 30 分钟趋势；对比相邻排口是否同步抬升',
-            '现场检查关键设备（风机/阀门/压差/温度/电流），记录异常参数与照片',
-            '若为压差升高：优先排查取压管堵塞/积水，再检查过滤器与转轮通道结焦/堵塞',
-            '执行临时控制措施：降负荷、切换备机/旁路、增加洗涤/喷淋强度（如适用）',
-            '处置后 10/30/60 分钟复测，趋势恢复稳定后提交处置并进入 48h 跟踪',
-        ],
-        'qaHint': '在本方案下可继续追问：例如“压差升高怎么判断是取压管问题？”“需要哪些现场证据？”',
-    }
+    # 从 rag_plans 表获取 AI 处理方案
+    rag_plan = await db.scalar(
+        select(RagPlan)
+        .where(RagPlan.alert_id == alert.id)
+        .order_by(RagPlan.created_at.desc())
+        .limit(1)
+    )
+
+    if rag_plan:
+        try:
+            steps = json.loads(rag_plan.steps)
+        except json.JSONDecodeError:
+            steps = []
+        ai_plan = {
+            'title': rag_plan.title,
+            'summary': rag_plan.summary,
+            'steps': steps,
+            'qaHint': rag_plan.qa_hint,
+        }
+    else:
+        # 默认可用方案（管理端未下发时使用）
+        ai_plan = {
+            'title': '现场处置方案（默认）',
+            'summary': '按“先控制风险—再定位原因—复测确认—留痕闭环”的顺序执行，必要时升级班长/仪控/工艺联动。',
+            'steps': [
+                '确认告警点位、阈值与近 30 分钟趋势；对比相邻排口是否同步抬升',
+                '现场检查关键设备（风机/阀门/压差/温度/电流），记录异常参数与照片',
+                '若为压差升高：优先排查取压管堵塞/积水，再检查过滤器与转轮通道结焦/堵塞',
+                '执行临时控制措施：降负荷、切换备机/旁路、增加洗涤/喷淋强度（如适用）',
+                '处置后 10/30/60 分钟复测，趋势恢复稳定后提交处置并进入 48h 跟踪',
+            ],
+            'qaHint': '在本方案下可继续追问：例如“压差升高怎么判断是取压管问题？”“需要哪些现场证据？”',
+        }
 
     now = datetime.now().replace(microsecond=0)
     resolve_earliest: datetime | None = None

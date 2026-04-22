@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Optional
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -18,7 +19,8 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 60
 
     postgres_dsn: str = 'sqlite+aiosqlite:///./vocs.db'
-    redis_url: str = 'redis://localhost:6379/0'
+    # Optional for client prototype; if empty/None, redis features are disabled.
+    redis_url: Optional[str] = 'redis://localhost:6379/0'
 
     rag_enabled: bool = False
     chroma_persist_dir: str = './chroma_data'

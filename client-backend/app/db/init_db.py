@@ -150,9 +150,9 @@ async def seed_if_empty(session: AsyncSession) -> None:
 
         session.add_all([alert_1, alert_2])
 
-    # Check and seed AreaZone
-    zone_exists = await session.scalar(select(AreaZone.id).limit(1))
-    if not zone_exists:
+    # Check and seed AreaZone - only seed if '喷涂生产厂房' doesn't exist
+    coating_zone_exists = await session.scalar(select(AreaZone.id).where(AreaZone.name == '喷涂生产厂房').limit(1))
+    if not coating_zone_exists:
         # 与 admin 端 FactoryScene 建模一致：左起排口烟囱—喷涂—转轮—RTO—公辅，前侧为监测附属（含 1 号排口）
         session.add_all([
             AreaZone(name='喷涂生产厂房', manager_username='admin', device_count=8, online_rate=98.5, alert_count=1, avg_vocs=22.4),

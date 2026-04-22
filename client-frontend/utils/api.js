@@ -1,4 +1,17 @@
-const DEFAULT_BASE_URL = 'http://localhost:8002/api/v1';
+function computeDefaultBaseUrl() {
+  // Docker demo: prefer same-origin reverse proxy (/api -> backend /api/v1)
+  // Local dev: fall back to direct backend URL.
+  try {
+    if (typeof window !== 'undefined' && window.location && window.location.origin) {
+      return `${window.location.origin}/api`;
+    }
+  } catch {
+    // ignore
+  }
+  return 'http://localhost:8002/api/v1';
+}
+
+const DEFAULT_BASE_URL = computeDefaultBaseUrl();
 const AUTH_TOKEN_KEY = 'authToken';
 const AUTH_USER_KEY = 'authUser';
 const API_BASE_URL_KEY = 'apiBaseUrl';
@@ -169,6 +182,7 @@ export function request(options) {
           resolve(res.data);
           return;
         }
+
         let message = `HTTP ${res.statusCode}`;
         if (res?.data?.detail) {
           if (Array.isArray(res.data.detail)) {

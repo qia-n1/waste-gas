@@ -1,0 +1,47 @@
+{
+  "pages": [
+    "pages/auth/login",
+    "pages/index/index",
+    "pages/monitor/realtime",
+    "pages/alerts/list",
+    "pages/alerts/detail",
+    "pages/ai/chat",
+    "pages/area/index",
+    "pages/records/index",
+    "pages/profile/index",
+    "pages/profile/edit",
+    "pages/settings/index"
+  ],
+  "window": {
+    "navigationBarTextStyle": "white",
+    "navigationBarTitleText": "废气监测系统",
+    "navigationBarBackgroundColor": "#7B61FF",
+    "backgroundColor": "#FFFFFF"
+  },
+  "tabBar": {
+    "color": "#9CA3AF",
+    "selectedColor": "#7B61FF",
+    "backgroundColor": "#fff",
+    "borderStyle": "white",
+    "list": [
+      {
+        "pagePath": "pages/index/index",
+        "text": "首页"
+      },
+      {
+        "pagePath": "pages/monitor/realtime",
+        "text": "监控"
+      },
+      {
+        "pagePath": "pages/alerts/list",
+        "text": "告警"
+      },
+      {
+        "pagePath": "pages/profile/index",
+        "text": "我的"
+      }
+    ]
+  },
+  "renderer": "webview",
+  "usingComponents": {}
+}
