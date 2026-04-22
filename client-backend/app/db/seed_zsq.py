@@ -654,7 +654,7 @@ async def _normalize_zsq_scope(session: AsyncSession, now: datetime) -> None:
             )
 
     coating_zone = await session.scalar(
-        select(AreaZone).where(AreaZone.manager_username == ZSQ, AreaZone.name == COATING_AREA).limit(1)
+        select(AreaZone).where(AreaZone.name == COATING_AREA).limit(1)
     )
     if coating_zone is None:
         coating_zone = AreaZone(
@@ -667,6 +667,7 @@ async def _normalize_zsq_scope(session: AsyncSession, now: datetime) -> None:
         )
         session.add(coating_zone)
     else:
+        coating_zone.manager_username = ZSQ
         coating_zone.device_count = 4
         coating_zone.online_rate = 99.4
         coating_zone.alert_count = 2

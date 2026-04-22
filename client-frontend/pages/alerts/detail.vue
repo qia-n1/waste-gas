@@ -248,7 +248,8 @@ export default {
         uni.showToast({ title: '接单成功', icon: 'success' });
         await this.loadAlertDetail();
       } catch (e) {
-        uni.showToast({ title: '接单失败', icon: 'none' });
+        const msg = (e && e.message) || '接单失败';
+        uni.showToast({ title: msg, icon: 'none', duration: 2500 });
       }
     },
     async ignoreAlert() {
@@ -257,8 +258,9 @@ export default {
         await request({ url: `/alerts/${this.alertId}/ignore`, method: 'POST' });
         await this.loadAlertDetail();
         uni.showToast({ title: '告警已忽略', duration: 1000 });
-      } catch (error) {
-        uni.showToast({ title: '操作失败', icon: 'none' });
+      } catch (e) {
+        const msg = (e && e.message) || '操作失败';
+        uni.showToast({ title: msg, icon: 'none', duration: 2500 });
       }
     },
     async markMisreport() {
@@ -267,8 +269,9 @@ export default {
         await request({ url: `/alerts/${this.alertId}/misreport`, method: 'POST' });
         await this.loadAlertDetail();
         uni.showToast({ title: '已标记为误报', duration: 1000 });
-      } catch (error) {
-        uni.showToast({ title: '标记失败', icon: 'none' });
+      } catch (e) {
+        const msg = (e && e.message) || '标记失败';
+        uni.showToast({ title: msg, icon: 'none', duration: 2500 });
       }
     },
     async submitHandle() {
@@ -278,8 +281,9 @@ export default {
         uni.showToast({ title: '已进入持续跟踪，期满后可结案', duration: 1600 });
         this.handleForm = { result: '', notes: '', photoUrl: '' };
         await this.loadAlertDetail();
-      } catch (error) {
-        uni.showToast({ title: '提交失败', icon: 'none' });
+      } catch (e) {
+        const msg = (e && e.message) || '提交失败';
+        uni.showToast({ title: msg, icon: 'none', duration: 2500 });
       }
     },
     async submitResolve() {
@@ -288,9 +292,9 @@ export default {
         await request({ url: `/alerts/${this.alertId}/resolve`, method: 'POST' });
         uni.showToast({ title: '已结案', duration: 1000 });
         await this.loadAlertDetail();
-      } catch (error) {
-        const msg = (error && error.message) || '结案失败';
-        uni.showToast({ title: msg.length > 40 ? '未满跟踪期或状态不允许' : msg, icon: 'none' });
+      } catch (e) {
+        const msg = (e && e.message) || '结案失败';
+        uni.showToast({ title: msg, icon: 'none', duration: 2500 });
       }
     }
   }
